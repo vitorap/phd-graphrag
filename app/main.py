@@ -742,7 +742,7 @@ def graph_only_fallback(payload: CypherSynthesizeRequest, error: str | None = No
     graph = payload.graph or {}
     nodes = graph.get("nodes") or []
     edges = graph.get("edges") or []
-    prefix = f"O Ollama nao respondeu ({error}). " if error else ""
+    prefix = "Sintese com LLM indisponivel; exibindo leitura estrutural deterministica. " if error else ""
     if not nodes and not edges:
         return prefix + "A query nao trouxe estrutura renderizavel; use RETURN p ou RETURN a, r, b para sintetizar o grafo."
     edge_examples = "; ".join(

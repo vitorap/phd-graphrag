@@ -327,6 +327,8 @@ const state = {
   lectureSteps: [],
   lectureIndex: 0,
   hasCompare: false,
+  strategyCompareResults: null,
+  strategyCompareQuestion: "",
   lastAnswerMode: null,
   lastQuestion: "",
   lastGraph: null,
@@ -387,6 +389,15 @@ function setAnswerPlaceholder(meta, text) {
   answerMeta.textContent = meta;
   answerBox.innerHTML = `<p class="muted">${escapeHtml(text)}</p>`;
   contextBox.textContent = "";
+}
+
+function currentQuestion() {
+  return questionInput.value.trim();
+}
+
+function cachedStrategyResult(strategyId) {
+  if (!state.strategyCompareResults || state.strategyCompareQuestion !== currentQuestion()) return null;
+  return state.strategyCompareResults[strategyId] || null;
 }
 
 function resetPipelinePlaceholder() {
@@ -964,11 +975,16 @@ function renderActiveGraphRagStrategy() {
   });
 }
 
-function setGraphRagStrategy(strategyId) {
+function setGraphRagStrategy(strategyId, options = {}) {
   const strategy = strategyById(strategyId);
   state.activeGraphRagStrategy = strategy.id;
   renderActiveGraphRagStrategy();
   if (activeView() === "graphrag") {
+    const cached = options.preferCached !== false ? cachedStrategyResult(strategy.id) : null;
+    if (cached) {
+      displayGraphRagStrategyResult(strategy.id, cached);
+      return;
+    }
     state.lastAnswerMode = null;
     setAnswerPlaceholder(strategy.shortName || "GraphRAG", `Variante selecionada: ${strategy.name}. Execute para preencher evidencias e trace.`);
     resetPipelinePlaceholder();
@@ -1357,6 +1373,8 @@ async function compareQuestion() {
 async function compareGraphRagStrategies() {
   if (!strategyCompareResults) return;
   strategyCompareResults.innerHTML = `<article class="trace-doc-empty">Comparando estrategias em retrieval-only...</article>`;
+  state.strategyCompareResults = null;
+  state.strategyCompareQuestion = currentQuestion();
   strategyCompareButton.disabled = true;
   try {
     const result = await getJson("/api/graphrag/compare", {
@@ -1364,11 +1382,41 @@ async function compareGraphRagStrategies() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload("hybrid"), use_llm: false }),
     });
+    state.strategyCompareResults = result.results || {};
+    state.strategyCompareQuestion = result.question || currentQuestion();
     renderStrategyCompare(result.results || {});
   } catch (error) {
+    state.strategyCompareResults = null;
     strategyCompareResults.innerHTML = `<article class="trace-doc-empty error-text">${escapeHtml(error.message)}</article>`;
   } finally {
     strategyCompareButton.disabled = false;
+  }
+}
+
+function markStrategyCompareSelection(strategyId) {
+  strategyCompareResults?.querySelectorAll("[data-strategy-result]").forEach((card) => {
+    card.classList.toggle("selected", card.dataset.strategyResult === strategyId);
+  });
+}
+
+function displayGraphRagStrategyResult(strategyId, result, options = {}) {
+  if (!result) return;
+  const strategy = strategyById(strategyId);
+  state.activeGraphRagStrategy = strategy.id;
+  state.lastAnswerMode = "hybrid";
+  state.lastQuestion = result.question || currentQuestion();
+  renderActiveGraphRagStrategy();
+  setTags(result.entities || []);
+  answerBox.innerHTML = renderStructuredAnswer(result);
+  contextBox.textContent = result.context || result.hybridContext || result.graphContext || result.textContext || "";
+  answerMeta.textContent = `${strategy.shortName || strategy.id} · ${answerMetaText(result, topKInput.value)}`;
+  llmStatus.textContent = `${result.model || modelInput.value || "modelo local"} · ${result.llmStatus || "retrieval-only"}`;
+  if (result.graph && result.graph.nodes) renderGraph(result.graph);
+  updatePipeline(result);
+  renderGraphRagTrace(result);
+  markStrategyCompareSelection(strategy.id);
+  if (options.scroll !== false) {
+    document.querySelector("#pipelineBoard")?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 }
 
@@ -1416,10 +1464,11 @@ function renderStrategyCompare(results) {
     .join("");
   strategyCompareResults.querySelectorAll("[data-open-strategy]").forEach((button) => {
     button.addEventListener("click", () => {
-      setGraphRagStrategy(button.dataset.openStrategy);
-      strategyCompareResults.scrollIntoView({ block: "nearest" });
+      const strategyId = button.dataset.openStrategy;
+      displayGraphRagStrategyResult(strategyId, results[strategyId]);
     });
   });
+  markStrategyCompareSelection(state.activeGraphRagStrategy);
 }
 
 function renderCompare(results) {
@@ -1884,6 +1933,8 @@ document.querySelectorAll(".demo-jump").forEach((button) => {
 });
 questionInput.addEventListener("input", () => {
   state.hasCompare = false;
+  state.strategyCompareResults = null;
+  state.strategyCompareQuestion = "";
   state.lastAnswerMode = null;
   updateViewPlaceholders(activeView());
 });

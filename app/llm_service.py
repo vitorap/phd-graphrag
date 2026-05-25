@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from app.config import settings
 from app.llm_contracts import CypherDraft, GroundedAnswer, LLMTrace
@@ -302,14 +302,75 @@ LIMIT 30
     def _parse_structured(raw: str, schema: type[SchemaT], parser: PydanticOutputParser) -> SchemaT:
         try:
             return parser.parse(raw)
-        except Exception:
+        except Exception as parse_error:
             json_match = re.search(r"\{.*\}", raw, re.DOTALL)
             if not json_match:
-                raise
+                raise parse_error
             try:
-                return schema.model_validate_json(json_match.group(0))
-            except ValidationError:
-                return schema.model_validate(json.loads(json_match.group(0)))
+                data = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                raise parse_error
+            return schema.model_validate(LLMService._normalize_structured_payload(data, schema))
+
+    @staticmethod
+    def _normalize_structured_payload(data: Any, schema: type[SchemaT]) -> Any:
+        if schema is not GroundedAnswer or not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        if "answer" not in normalized or normalized["answer"] is None:
+            normalized["answer"] = ""
+        normalized["answer"] = str(normalized["answer"]).strip()
+        normalized["limits"] = str(normalized.get("limits") or "").strip()
+        confidence = str(normalized.get("confidence") or "medium").lower()
+        normalized["confidence"] = confidence if confidence in {"low", "medium", "high"} else "medium"
+
+        for field_name, source, label in [
+            ("textEvidence", "text", "Evidencia textual"),
+            ("graphEvidence", "graph", "Evidencia estrutural"),
+        ]:
+            raw_items = normalized.get(field_name) or []
+            if isinstance(raw_items, str):
+                raw_items = [raw_items]
+            if not isinstance(raw_items, list):
+                raw_items = []
+
+            evidence_items: list[dict[str, str]] = []
+            for idx, item in enumerate(raw_items[:6], start=1):
+                if isinstance(item, str):
+                    detail = item.strip()
+                    if detail:
+                        evidence_items.append({"source": source, "label": f"{label} {idx}", "detail": detail})
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                entry = dict(item)
+                entry["source"] = source
+                entry["label"] = str(
+                    entry.get("label")
+                    or entry.get("title")
+                    or entry.get("sourceTitle")
+                    or entry.get("name")
+                    or f"{label} {idx}"
+                ).strip()
+                detail = (
+                    entry.get("detail")
+                    or entry.get("snippet")
+                    or entry.get("text")
+                    or entry.get("description")
+                    or entry.get("value")
+                )
+                entry["detail"] = str(detail or "").strip()
+                if entry["detail"]:
+                    evidence_items.append(
+                        {
+                            "source": entry["source"],
+                            "label": entry["label"],
+                            "detail": entry["detail"],
+                        }
+                    )
+            normalized[field_name] = evidence_items
+        return normalized
 
     def _trace(
         self,

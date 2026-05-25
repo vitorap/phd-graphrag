@@ -74,6 +74,18 @@ def schema_smoke() -> None:
     )
     require("Evidencias textuais" in answer.to_markdown(), "markdown estruturado sem evidencias textuais")
     CypherDraft(query="MATCH (a) RETURN a LIMIT 1", explanation="Retorna nos.")
+    normalized = LLMService._normalize_structured_payload(
+        {
+            "answer": "Frodo se conecta a Sauron pelo Anel.",
+            "textEvidence": ["Trecho textual recuperado."],
+            "graphEvidence": ["Frodo -[CO_OCCURS_WITH]-> Sauron"],
+            "confidence": "medium",
+        },
+        GroundedAnswer,
+    )
+    parsed = GroundedAnswer.model_validate(normalized)
+    require(parsed.textEvidence[0].source == "text", "normalizacao perdeu source textual")
+    require(parsed.graphEvidence[0].source == "graph", "normalizacao perdeu source estrutural")
 
 
 def contract_smoke() -> None:

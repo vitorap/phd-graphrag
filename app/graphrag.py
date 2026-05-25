@@ -1563,7 +1563,7 @@ class GraphRAG:
     ) -> str:
         prefix = ""
         if llm_error:
-            prefix = f"O Ollama nao respondeu ({llm_error}). "
+            prefix = "Sintese com LLM indisponivel; exibindo somente evidencias recuperadas. "
 
         edges = graph.get("edges") or []
         edge_text = self.direct_edge_summary(entities, edges)
