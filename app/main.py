@@ -77,12 +77,7 @@ WHERE type(r) <> 'MENTIONS' AND type(r) <> 'SPEAKS_LINE'
 WITH p, r, n
 ORDER BY coalesce(r.weight, r.confidence, 1) DESC, n.name
 LIMIT 25
-RETURN p,
-       n.name AS entidade,
-       labels(n) AS labels,
-       type(r) AS relacao,
-       coalesce(r.weight, r.confidence, 1) AS peso
-ORDER BY peso DESC, entidade
+RETURN p
 """.strip(),
     },
     {
@@ -101,10 +96,8 @@ MATCH (a:Entity {name: 'Frodo'})
 MATCH (b:Entity {name: 'Sauron'})
 MATCH p = shortestPath((a)-[*..5]-(b))
 WHERE all(rel IN relationships(p) WHERE type(rel) <> 'PREDICTED_LINK')
-RETURN p,
-       [n IN nodes(p) | n.name] AS caminho,
-       [r IN relationships(p) | type(r)] AS relacoes,
-       length(p) AS saltos
+RETURN p
+LIMIT 20
 """.strip(),
     },
     {
@@ -124,13 +117,7 @@ WHERE m.name <> 'Frodo' AND m.name <> 'Sauron'
 WITH p, m, r1, r2
 ORDER BY coalesce(r1.weight, r1.confidence, 1) + coalesce(r2.weight, r2.confidence, 1) DESC, m.name
 LIMIT 25
-RETURN p,
-       m.name AS ponte,
-       labels(m) AS labels,
-       type(r1) AS relacao_com_frodo,
-       type(r2) AS relacao_com_sauron,
-       coalesce(r1.weight, r1.confidence, 1) + coalesce(r2.weight, r2.confidence, 1) AS forca
-ORDER BY forca DESC, ponte
+RETURN p
 """.strip(),
     },
     {
@@ -145,18 +132,12 @@ ORDER BY forca DESC, ponte
             "caption": "A query retorna personagens Elf-Orc e as relacoes entre eles.",
         },
         "query": """
-MATCH p = (elf:Character)-[r]-(orc:Character)
-WHERE elf.race = 'Elf'
-  AND orc.race = 'Orc'
-  AND type(r) IN ['CO_OCCURS_WITH', 'INTERACTS_WITH', 'ENEMY_OF', 'PREDICTED_LINK']
-WITH p, elf, orc, r
+MATCH (elf:Character {race: 'Elf'})
+MATCH (elf)-[r:CO_OCCURS_WITH|INTERACTS_WITH|ENEMY_OF|FRIEND_OF|PREDICTED_LINK]-(orc:Character {race: 'Orc'})
+WITH elf, r, orc
 ORDER BY coalesce(r.weight, r.confidence, 1) DESC, elf.name, orc.name
 LIMIT 30
-RETURN p,
-       elf.name AS elfo,
-       orc.name AS orc,
-       type(r) AS relacao,
-       coalesce(r.weight, r.confidence, 1) AS peso
+RETURN elf, r, orc
 """.strip(),
     },
     {
@@ -179,13 +160,7 @@ WHERE a.race IS NOT NULL
 WITH p, a, b, r
 ORDER BY CASE type(r) WHEN 'ENEMY_OF' THEN 1000 ELSE coalesce(r.weight, 1) END DESC, a.name, b.name
 LIMIT 35
-RETURN p,
-       a.name AS personagem_a,
-       a.race AS raca_a,
-       b.name AS personagem_b,
-       b.race AS raca_b,
-       type(r) AS relacao,
-       coalesce(r.weight, r.confidence, 1) AS peso
+RETURN p
 """.strip(),
     },
     {
@@ -207,11 +182,7 @@ WHERE c.community = f.community
 WITH p, c
 ORDER BY length(p), coalesce(c.pagerank, 0) DESC
 LIMIT 35
-RETURN p,
-       c.name AS personagem,
-       c.race AS raca,
-       round(coalesce(c.pagerank, 0), 5) AS pagerank,
-       c.community AS comunidade
+RETURN p
 """.strip(),
     },
     {
@@ -232,10 +203,7 @@ WHERE all(rel IN relationships(p)
 WITH p, n
 ORDER BY length(p), coalesce(n.pagerank, 0) DESC
 LIMIT 40
-RETURN p,
-       n.name AS entidade,
-       labels(n) AS labels,
-       length(p) AS saltos
+RETURN p
 """.strip(),
     },
     {
@@ -254,11 +222,7 @@ MATCH p = (a:Character)-[r:PREDICTED_LINK]->(b:Character)
 WITH p, a, b, r
 ORDER BY coalesce(r.confidence, 0) DESC, a.name, b.name
 LIMIT 30
-RETURN p,
-       a.name AS origem,
-       b.name AS destino,
-       round(coalesce(r.confidence, 0), 3) AS confianca,
-       r.method AS metodo
+RETURN p
 """.strip(),
     },
     {
@@ -277,33 +241,27 @@ MATCH p = (c:Entity)-[r:HAS_WEAPON]-(w:Weapon)
 WITH p, c, w, r
 ORDER BY c.name, w.name
 LIMIT 30
-RETURN p,
-       c.name AS personagem,
-       w.name AS arma,
-       type(r) AS relacao
+RETURN p
 """.strip(),
     },
     {
         "id": "shared-documents",
         "title": "Documentos que mencionam Frodo e Sauron",
-        "explain": "Exemplo propositalmente tabular: mostra documentos, nao subgrafo.",
-        "lesson": "Nem toda consulta Cypher deve virar grafo. Aqui o foco e auditoria documental para conectar Graph com GraphRAG.",
-        "gnn": "Documentos ligados por MENTIONS podem virar nos de outro grafo, mas esta consulta retorna valores escalares.",
+        "explain": "Mostra documentos como nos conectados por MENTIONS, mantendo a visualizacao em grafo.",
+        "lesson": "Documentos tambem podem ser nos do grafo: isso conecta Graph-only com GraphRAG sem cair em tabela escalar.",
+        "gnn": "Documentos ligados por MENTIONS formam um grafo bipartido documento-entidade.",
         "visual": {
             "center": "Sauron",
             "hops": 1,
-            "caption": "Este exemplo retorna tabela; o aviso da UI deve explicar que nao ha subgrafo renderizavel.",
+            "caption": "A query retorna documentos, entidades e relacoes MENTIONS para o Browser desenhar o grafo.",
         },
         "query": """
-MATCH (d:RetrievalDocument)-[:MENTIONS]->(:Entity {name: 'Frodo'})
-MATCH (d)-[:MENTIONS]->(:Entity {name: 'Sauron'})
-RETURN d.sourceTitle AS fonte,
-       coalesce(d.chapterTitle, d.speaker, d.sourceType) AS secao,
-       labels(d) AS tipo,
-       substring(d.text, 0, 220) AS trecho,
-       d.mentionCount AS mencoes
-ORDER BY mencoes DESC, fonte
+MATCH (d:RetrievalDocument)-[rf:MENTIONS]->(f:Entity {name: 'Frodo'})
+MATCH (d)-[rs:MENTIONS]->(s:Entity {name: 'Sauron'})
+WITH d, rf, f, rs, s
+ORDER BY coalesce(d.mentionCount, 0) DESC, d.sourceTitle
 LIMIT 12
+RETURN d, rf, f, rs, s
 """.strip(),
     },
 ]

@@ -144,6 +144,8 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
 
 ## Consultas Cypher para Mostrar
 
+Regra pratica para abrir no Neo4j Browser: retorne objetos completos (`p`, `n`, `r`), nao apenas propriedades escalares. `RETURN c.name` vira tabela; `RETURN c` ou `RETURN p` vira grafo.
+
 Vizinhanca de Frodo:
 
 ```cypher
@@ -156,9 +158,10 @@ Top personagens por PageRank:
 
 ```cypher
 MATCH (c:Character)
-RETURN c.name, c.race, c.pagerank, c.weightedDegree, c.community
-ORDER BY c.pagerank DESC
-LIMIT 15;
+WITH c
+ORDER BY coalesce(c.pagerank, 0) DESC
+LIMIT 15
+RETURN c;
 ```
 
 Caminhos entre Frodo e Sauron:
@@ -180,10 +183,12 @@ RETURN p;
 Chunks que mencionam Frodo e Sauron:
 
 ```cypher
-MATCH (d:RetrievalDocument)-[:MENTIONS]->(:Entity {name: "Frodo"})
-MATCH (d)-[:MENTIONS]->(:Entity {name: "Sauron"})
-RETURN d.sourceTitle, d.chapterTitle, left(d.text, 220) AS trecho
-LIMIT 10;
+MATCH (d:RetrievalDocument)-[rf:MENTIONS]->(f:Entity {name: "Frodo"})
+MATCH (d)-[rs:MENTIONS]->(s:Entity {name: "Sauron"})
+WITH d, rf, f, rs, s
+ORDER BY coalesce(d.mentionCount, 0) DESC
+LIMIT 10
+RETURN d, rf, f, rs, s;
 ```
 
 ## Decisoes de Projeto

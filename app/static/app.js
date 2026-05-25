@@ -1688,7 +1688,7 @@ function renderCypherLesson(example) {
     graphLessonText.textContent = "Descreva uma pergunta, gere uma query revisavel, recupere estrutura e sintetize apenas o grafo retornado.";
     graphLessonGnn.textContent = "Use caminhos, vizinhos e pesos para discutir propagacao de informacao.";
     graphLessonVisual.textContent = "query auditavel";
-    graphLessonCaption.textContent = "Queries com RETURN p alimentam tabela e grafo; queries escalares continuam tabulares.";
+    graphLessonCaption.textContent = "Para visualizacao no Neo4j Browser, use RETURN p ou RETURN no, relacao, no; escalares so viram tabela.";
     return;
   }
   const visual = example.visual || {};

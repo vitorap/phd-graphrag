@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-run-indicators" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graph-cypher" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -317,7 +317,7 @@
                 </label>
                 <div class="button-row">
                   <button class="secondary-button" id="generateCypherButton" type="button">Gerar Cypher</button>
-                  <span class="generation-status" id="cypherGenerationStatus">O LLM gera a query; voce revisa antes de rodar.</span>
+                  <span class="generation-status" id="cypherGenerationStatus">O LLM gera Cypher read-only com RETURN p ou no-relacao-no para o Neo4j Browser desenhar o grafo.</span>
                 </div>
                 <label class="field">
                   <span>Cypher</span>
@@ -541,6 +541,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-run-indicators"></script>
+    <script src="/static/app.js?v=20260525-graph-cypher"></script>
   </body>
 </html>

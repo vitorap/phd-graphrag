@@ -19,6 +19,7 @@ from app.llm_prompts import (
     cypher_synthesis_prompt,
 )
 from app.llm_service import LLMContractError, LLMService
+from app.main import CYPHER_EXAMPLES
 
 
 def require(condition: bool, message: str) -> None:
@@ -86,6 +87,27 @@ def schema_smoke() -> None:
     parsed = GroundedAnswer.model_validate(normalized)
     require(parsed.textEvidence[0].source == "text", "normalizacao perdeu source textual")
     require(parsed.graphEvidence[0].source == "graph", "normalizacao perdeu source estrutural")
+    require(
+        LLMService._cypher_returns_graph_objects("MATCH p = (a)-[r]-(b) RETURN p LIMIT 10"),
+        "Cypher visual deveria aceitar RETURN p",
+    )
+    require(
+        LLMService._cypher_returns_graph_objects("MATCH (elf)-[r]-(orc) RETURN elf, r, orc LIMIT 10"),
+        "Cypher visual deveria aceitar RETURN no-rel-no",
+    )
+    require(
+        not LLMService._cypher_returns_graph_objects("MATCH (elf)-[r]-(orc) RETURN elf.name AS elfo, type(r) AS relacao LIMIT 10"),
+        "Cypher visual nao deveria aceitar retorno apenas escalar",
+    )
+    require(
+        not LLMService._cypher_returns_graph_objects("MATCH (elf)-[r]-(orc) WITH count(*) AS total RETURN total LIMIT 10"),
+        "Cypher visual nao deveria aceitar alias escalar nu",
+    )
+    for example in CYPHER_EXAMPLES:
+        require(
+            LLMService._cypher_returns_graph_objects(example["query"]),
+            f"Exemplo Cypher deveria ser renderizavel como grafo: {example['id']}",
+        )
 
 
 def contract_smoke() -> None:

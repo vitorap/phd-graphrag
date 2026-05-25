@@ -1053,9 +1053,10 @@ class GraphRAG:
                     "MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)\n"
                     "WHERE e.name IN $entities\n"
                     "WITH d, count(DISTINCT e) AS entityHits\n"
-                    "OPTIONAL MATCH (d)-[:MENTIONS]->(m:Entity)\n"
-                    "RETURN d.id, d.sourceTitle, entityHits, collect(DISTINCT m.name) AS mentions\n"
-                    "ORDER BY entityHits DESC, d.sequence LIMIT $limit"
+                    "ORDER BY entityHits DESC, d.sequence LIMIT $limit\n"
+                    "MATCH (d)-[m:MENTIONS]->(entity:Entity)\n"
+                    "WHERE entity.name IN $entities\n"
+                    "RETURN d, m, entity"
                 ),
             }
         if strategy == "vector_first":
@@ -1073,7 +1074,7 @@ class GraphRAG:
                     "MATCH (seed:Entity)\n"
                     "WHERE seed.name IN $seeds\n"
                     f"MATCH p = (seed)-[*1..{max(1, min(int(hops), 4))}]-(n:Entity)\n"
-                    "RETURN nodes(p) AS nodes, relationships(p) AS rels LIMIT $limit"
+                    "RETURN p LIMIT $limit"
                 ),
             }
         if strategy == "path":
@@ -1100,7 +1101,7 @@ class GraphRAG:
                     "MATCH (a:Entity {name: $source})\n"
                     "MATCH (b:Entity {name: $target})\n"
                     "MATCH p = shortestPath((a)-[*..5]-(b))\n"
-                    "RETURN p, [n IN nodes(p) | n.name] AS path"
+                    "RETURN p"
                 ),
             }
         if strategy == "graph_filter":
@@ -1114,7 +1115,11 @@ class GraphRAG:
                     "WITH collect(DISTINCT n.name) + $seeds AS graphNames\n"
                     "MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)\n"
                     "WHERE e.name IN graphNames\n"
-                    "RETURN d, count(DISTINCT e) AS graphHits ORDER BY graphHits DESC LIMIT $limit"
+                    "WITH d, graphNames, count(DISTINCT e) AS graphHits\n"
+                    "ORDER BY graphHits DESC LIMIT $limit\n"
+                    "MATCH (d)-[m:MENTIONS]->(entity:Entity)\n"
+                    "WHERE entity.name IN graphNames\n"
+                    "RETURN d, m, entity"
                 ),
             }
         if not entities:
@@ -1132,7 +1137,7 @@ class GraphRAG:
                 f"MATCH p = (seed)-[*1..{max(1, min(int(hops), 4))}]-(n:Entity)\n"
                 "WHERE all(rel IN relationships(p)\n"
                 "  WHERE type(rel) <> 'PREDICTED_LINK' OR coalesce(rel.confidence, 0) >= 0.25)\n"
-                "RETURN nodes(p) AS nodes, relationships(p) AS rels\n"
+                "RETURN p\n"
                 "LIMIT $limit"
             ),
         }

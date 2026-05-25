@@ -44,6 +44,10 @@ class LLMContractError(RuntimeError):
     pass
 
 
+class CypherVisualContractError(LLMContractError):
+    pass
+
+
 class LLMService:
     def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
@@ -109,15 +113,16 @@ MATCH (a:Entity {name: 'Frodo'})
 MATCH (b:Entity {name: 'Sauron'})
 MATCH p = shortestPath((a)-[*..5]-(b))
 WHERE all(rel IN relationships(p) WHERE type(rel) <> 'PREDICTED_LINK')
-RETURN p, [n IN nodes(p) | n.name] AS caminho, length(p) AS saltos
+RETURN p
 LIMIT 20
 
 Pergunta: relacoes entre elfos e orcs
 Cypher:
-MATCH p = (elf:Character)-[r]-(orc:Character)
-WHERE elf.race = 'Elf' AND orc.race = 'Orc'
-RETURN p, elf.name AS elfo, orc.name AS orc, type(r) AS relacao, coalesce(r.weight, r.confidence, 1) AS peso
-ORDER BY peso DESC
+MATCH (elf:Character {race: 'Elf'})
+MATCH (elf)-[r:ENEMY_OF|FRIEND_OF|INTERACTS_WITH|CO_OCCURS_WITH|PREDICTED_LINK]-(orc:Character {race: 'Orc'})
+WITH elf, r, orc
+ORDER BY coalesce(r.weight, r.confidence, 1) DESC, elf.name, orc.name
+RETURN elf, r, orc
 LIMIT 30
 """.strip()
         variables = {"question": question, "schema": schema, "examples": examples}
@@ -129,6 +134,7 @@ LIMIT 30
                 variables=variables,
                 model=model,
             )
+            self._validate_cypher_visual_contract(parsed.query)
         except Exception as first_error:
             repair_variables = {
                 **variables,
@@ -143,6 +149,7 @@ LIMIT 30
                 model=model,
                 attempts=2,
             )
+            self._validate_cypher_visual_contract(parsed.query)
         return CypherRunResult(draft=parsed, trace=trace, raw=raw)
 
     def synthesize_cypher(
@@ -409,6 +416,98 @@ LIMIT 30
             forbidden = ["chunk", "chunks", "fala", "falas", "trecho", "trechos", "script", "texto narrativo"]
             if parsed.textEvidence or any(term in answer_text for term in forbidden):
                 raise LLMContractError("Graph-only vazou evidencia textual.")
+
+    @staticmethod
+    def _validate_cypher_visual_contract(query: str) -> None:
+        if not LLMService._cypher_returns_graph_objects(query):
+            raise CypherVisualContractError(
+                "Cypher gerado retorna apenas escalares. Use RETURN p ou RETURN node, rel, node para o Neo4j Browser renderizar grafo."
+            )
+
+    @staticmethod
+    def _cypher_returns_graph_objects(query: str) -> bool:
+        return_items = LLMService._last_return_items(query)
+        if not return_items:
+            return False
+        graph_variables = LLMService._cypher_graph_variables(query)
+        if not graph_variables:
+            return False
+        scalar_markers = (
+            ".",
+            "(",
+            "[",
+            "{",
+            "CASE ",
+            "DISTINCT ",
+            "COUNT",
+            "COLLECT",
+            "TYPE",
+            "LABELS",
+            "LENGTH",
+            "COALESCE",
+            "TOSTRING",
+            "ROUND",
+            "SUBSTRING",
+        )
+        bare_identifier = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\s+AS\s+[A-Za-z_][A-Za-z0-9_]*)?$", re.IGNORECASE)
+        for item in return_items:
+            compact = re.sub(r"\s+", " ", item.strip())
+            compact = re.sub(r"^DISTINCT\s+", "", compact, flags=re.IGNORECASE)
+            upper = compact.upper()
+            if any(marker in upper for marker in scalar_markers):
+                continue
+            if bare_identifier.match(compact):
+                graph_name = re.split(r"\s+AS\s+", compact, flags=re.IGNORECASE)[0].strip()
+                if graph_name in graph_variables:
+                    return True
+        return False
+
+    @staticmethod
+    def _cypher_graph_variables(query: str) -> set[str]:
+        variables: set[str] = set()
+        variables.update(re.findall(r"\bMATCH\s+([A-Za-z_][A-Za-z0-9_]*)\s*=", query, re.IGNORECASE))
+        variables.update(re.findall(r"\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?=[:{\)])", query))
+        variables.update(re.findall(r"\[\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?=[:{\]])", query))
+        return variables
+
+    @staticmethod
+    def _last_return_items(query: str) -> list[str]:
+        matches = list(re.finditer(r"\bRETURN\b", query, re.IGNORECASE))
+        if not matches:
+            return []
+        start = matches[-1].end()
+        tail = query[start:]
+        stop_match = re.search(r"\b(ORDER\s+BY|SKIP|LIMIT)\b", tail, re.IGNORECASE)
+        return_clause = tail[: stop_match.start()] if stop_match else tail
+        return LLMService._split_top_level_commas(return_clause)
+
+    @staticmethod
+    def _split_top_level_commas(value: str) -> list[str]:
+        items: list[str] = []
+        start = 0
+        depth = 0
+        quote: str | None = None
+        for index, char in enumerate(value):
+            if quote:
+                if char == quote and value[index - 1 : index] != "\\":
+                    quote = None
+                continue
+            if char in {"'", '"'}:
+                quote = char
+                continue
+            if char in "([{":
+                depth += 1
+                continue
+            if char in ")]}":
+                depth = max(0, depth - 1)
+                continue
+            if char == "," and depth == 0:
+                items.append(value[start:index].strip())
+                start = index + 1
+        final = value[start:].strip()
+        if final:
+            items.append(final)
+        return items
 
     @staticmethod
     def _grounded_answer_to_markdown(answer: GroundedAnswer) -> str:

@@ -106,6 +106,7 @@ Relacoes principais:
   - `Strider` -> `Aragorn`
   - `Smeagol`/`Sméagol` -> `Gollum`
 - As respostas do LLM devem citar que sao baseadas no contexto recuperado, separando evidencia textual de evidencia estrutural quando for util.
+- Cypher gerado para visualizacao no Neo4j Browser deve retornar objetos completos (`RETURN p` ou `RETURN a, r, b`), nao apenas propriedades escalares como `a.name AS nome`.
 - `rag` usa embeddings Ollama + cosine similarity sobre `RetrievalDocument`.
 - BM25 existe apenas como fallback quando o indice vetorial ainda nao foi gerado ou o modelo de embedding falha.
 - `graph` usa entidades, subgrafo k-hop, caminhos e vizinhos.

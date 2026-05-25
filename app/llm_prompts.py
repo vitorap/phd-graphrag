@@ -94,7 +94,12 @@ def cypher_generation_prompt() -> ChatPromptTemplate:
                 (
                     "Voce gera Cypher read-only para uma demo Neo4j de Senhor dos Aneis. "
                     "A query deve ser uma unica consulta, sem ponto e virgula, sem CREATE/MERGE/DELETE/SET/REMOVE/DROP, "
-                    "sem APOC e sem GDS. Sempre inclua LIMIT. Para perguntas visuais, prefira RETURN p ou RETURN a, r, b. "
+                    "sem APOC e sem GDS. Sempre inclua LIMIT. "
+                    "Regra obrigatoria para visualizacao no Neo4j Browser: retorne objetos completos do grafo, nao apenas escalares. "
+                    "Prefira RETURN p para paths ou RETURN a, r, b para no-relacao-no. "
+                    "Nao gere RETURN apenas com a.name, type(r), count(*), labels(n) ou aliases escalares; isso vira tabela e nao grafo. "
+                    "Use propriedades somente em MATCH, WHERE, WITH e ORDER BY; o usuario pode clicar nos nos/arestas para ver propriedades. "
+                    "Para exploracao de relacoes entre grupos/personagens, considere CO_OCCURS_WITH, INTERACTS_WITH, ENEMY_OF, FRIEND_OF e PREDICTED_LINK quando fizer sentido. "
                     "Use apenas labels, propriedades e relacoes do schema fornecido. "
                     "Responda exclusivamente em JSON valido no schema abaixo.\n{format_instructions}"
                 ),
@@ -116,6 +121,8 @@ def cypher_generation_repair_prompt() -> ChatPromptTemplate:
                     "Corrija a saida para obedecer estritamente ao schema JSON CypherDraft. "
                     "A query deve ser uma unica consulta Cypher read-only, sem ponto e virgula, sem CREATE/MERGE/DELETE/SET/REMOVE/DROP, "
                     "sem APOC, sem GDS e sempre com LIMIT. "
+                    "Para o Neo4j Browser mostrar grafo, o RETURN deve incluir objetos completos: RETURN p ou RETURN a, r, b. "
+                    "Nao retorne somente escalares como a.name AS nome, type(r) AS relacao ou count(*). "
                     "Nao explique fora do JSON.\n{format_instructions}"
                 ),
             ),

@@ -38,7 +38,7 @@ class GroundedAnswer(BaseModel):
 
 
 class CypherDraft(BaseModel):
-    query: str = Field(..., description="Consulta Cypher unica e read-only.")
+    query: str = Field(..., description="Consulta Cypher unica, read-only e renderizavel como grafo quando possivel.")
     explanation: str = Field("", description="Uma frase curta explicando o que a query recupera.")
     warnings: list[str] = Field(default_factory=list, description="Alertas sobre ambiguidade ou fallback.")
 
