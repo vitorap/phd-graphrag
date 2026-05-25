@@ -198,6 +198,7 @@ function updateViewPlaceholders(name) {
 function setView(name) {
   workspaceShell.dataset.view = name;
   updateControlContext(name);
+  window.scrollTo({ top: 0 });
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === name);
   });
