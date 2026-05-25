@@ -1,4 +1,8 @@
 const graphSvg = document.querySelector("#graphSvg");
+const workspaceShell = document.querySelector("#workspaceShell");
+const controlKicker = document.querySelector("#controlKicker");
+const controlTitle = document.querySelector("#controlTitle");
+const controlHint = document.querySelector("#controlHint");
 const questionInput = document.querySelector("#questionInput");
 const hopsInput = document.querySelector("#hopsInput");
 const topKInput = document.querySelector("#topKInput");
@@ -30,10 +34,19 @@ const cypherResults = document.querySelector("#cypherResults");
 const runCypherButton = document.querySelector("#runCypherButton");
 const copyCypherButton = document.querySelector("#copyCypherButton");
 const copyStarterCypher = document.querySelector("#copyStarterCypher");
+const graphLessonTitle = document.querySelector("#graphLessonTitle");
+const graphLessonText = document.querySelector("#graphLessonText");
+const graphLessonGnn = document.querySelector("#graphLessonGnn");
+const graphLessonVisual = document.querySelector("#graphLessonVisual");
+const graphLessonCaption = document.querySelector("#graphLessonCaption");
 const lectureSteps = document.querySelector("#lectureSteps");
 const lectureDuration = document.querySelector("#lectureDuration");
 const lectureTitle = document.querySelector("#lectureTitle");
+const lectureProgress = document.querySelector("#lectureProgress");
+const lectureProgressBar = document.querySelector("#lectureProgressBar");
 const lecturePoints = document.querySelector("#lecturePoints");
+const lectureDemoAction = document.querySelector("#lectureDemoAction");
+const lectureSpeakerNotes = document.querySelector("#lectureSpeakerNotes");
 const quizQuestion = document.querySelector("#quizQuestion");
 const quizAnswer = document.querySelector("#quizAnswer");
 const revealQuizButton = document.querySelector("#revealQuizButton");
@@ -81,10 +94,47 @@ const PROMPTS = [
   "O que muda quando aumento hops de 1 para 3?",
 ];
 
+const CONTROL_CONTEXT = {
+  overview: {
+    kicker: "Demo",
+    title: "Escolha a trilha",
+    hint: "Abertura da aula: use os atalhos para entrar no modo certo sem carregar controles tecnicos demais.",
+  },
+  rag: {
+    kicker: "RAG",
+    title: "Busca textual",
+    hint: "Ajuste pergunta, top-k e modelo. Aqui a estrutura do grafo sai de cena para o texto aparecer.",
+  },
+  graph: {
+    kicker: "Graph",
+    title: "Laboratorio Cypher",
+    hint: "Controle centro e saltos do subgrafo enquanto explora queries estruturais.",
+  },
+  graphrag: {
+    kicker: "GraphRAG",
+    title: "Texto guiado por grafo",
+    hint: "Combine pergunta, k-hop e top-k para mostrar como o grafo reforca a recuperacao textual.",
+  },
+  compare: {
+    kicker: "Compare",
+    title: "Mesma pergunta, tres metodos",
+    hint: "Rode os tres modos lado a lado. O painel mostra so os parametros que afetam a comparacao.",
+  },
+  lecture: {
+    kicker: "Lecture",
+    title: "Roteiro da aula",
+    hint: "Avance pelos passos, revele quizzes e aplique cada etapa no playground.",
+  },
+};
+
 const state = {
   cypherExamples: [],
+  activeCypherExample: null,
   lectureSteps: [],
   lectureIndex: 0,
+  hasCompare: false,
+  lastAnswerMode: null,
+  lastQuestion: "",
   graphViewBox: null,
   dragging: false,
   dragStart: null,
@@ -103,7 +153,51 @@ function activeView() {
   return document.querySelector(".view.active")?.id.replace("view-", "") || "overview";
 }
 
+function updateControlContext(name) {
+  const copy = CONTROL_CONTEXT[name] || CONTROL_CONTEXT.overview;
+  controlKicker.textContent = copy.kicker;
+  controlTitle.textContent = copy.title;
+  controlHint.textContent = copy.hint;
+}
+
+function setAnswerPlaceholder(meta, text) {
+  answerMeta.textContent = meta;
+  answerBox.innerHTML = `<p class="muted">${escapeHtml(text)}</p>`;
+  contextBox.textContent = "";
+}
+
+function resetPipelinePlaceholder() {
+  document.querySelector("#pipeEntities").textContent = "-";
+  document.querySelector("#pipeGraph").textContent = "-";
+  document.querySelector("#pipeVectors").textContent = "-";
+  document.querySelector("#pipeAnswer").textContent = "-";
+}
+
+function renderComparePlaceholder() {
+  compareResults.innerHTML = `
+    <article class="compare-placeholder">RAG vai mostrar evidencias textuais recuperadas por embedding.</article>
+    <article class="compare-placeholder">Graph vai mostrar caminhos, vizinhos e relacoes estruturais.</article>
+    <article class="compare-placeholder">GraphRAG vai combinar a estrutura com os chunks recuperados.</article>
+  `;
+}
+
+function updateViewPlaceholders(name) {
+  if (name === "rag" && state.lastAnswerMode !== "rag") {
+    setAnswerPlaceholder("RAG aguardando execucao", "Rode a busca para ver resposta, chunks recuperados e contexto textual.");
+    ragEvidence.innerHTML = `<article class="evidence-card"><h3>Aguardando busca</h3><p>Os chunks e falas recuperados aparecem aqui depois da execucao vetorial.</p></article>`;
+  }
+  if (name === "graphrag" && state.lastAnswerMode !== "hybrid") {
+    setAnswerPlaceholder("GraphRAG aguardando execucao", "Execute o GraphRAG para preencher entidades, subgrafo, evidencias e resposta.");
+    resetPipelinePlaceholder();
+  }
+  if (name === "compare" && !state.hasCompare) {
+    renderComparePlaceholder();
+  }
+}
+
 function setView(name) {
+  workspaceShell.dataset.view = name;
+  updateControlContext(name);
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === name);
   });
@@ -113,6 +207,8 @@ function setView(name) {
   if (name === "rag") modeInput.value = "rag";
   if (name === "graph") modeInput.value = "graph";
   if (name === "graphrag") modeInput.value = "hybrid";
+  if (name === "compare") modeInput.value = "hybrid";
+  updateViewPlaceholders(name);
 }
 
 function setTags(names) {
@@ -410,9 +506,9 @@ function renderEvidenceCards(documents, target = ragEvidence) {
 }
 
 async function askQuestion(modeOverride = null) {
+  const requestedMode = modeOverride || modeInput.value;
   answerBox.textContent = "";
   contextBox.textContent = "";
-  compareResults.innerHTML = "";
   llmStatus.textContent = llmInput.checked ? "Ollama local gerando resposta..." : "Recuperando contexto...";
   answerMeta.textContent = "Executando retrieval...";
   askButton.disabled = true;
@@ -420,14 +516,16 @@ async function askQuestion(modeOverride = null) {
     const result = await getJson("/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload(modeOverride)),
+      body: JSON.stringify(payload(requestedMode)),
     });
+    state.lastAnswerMode = result.mode || requestedMode;
+    state.lastQuestion = questionInput.value;
     setTags(result.entities || []);
     answerBox.innerHTML = renderAnswer(result.answer || "");
     contextBox.textContent = result.context || "";
     answerMeta.textContent = `${result.mode} · ${result.retrieval?.method || "sem texto"} · top-k ${result.topK || topKInput.value}`;
     llmStatus.textContent = `${result.model} · ${result.llmStatus}`;
-    if (result.documents) renderEvidenceCards(result.documents, ragEvidence);
+    if ((result.mode || requestedMode) === "rag" && result.documents) renderEvidenceCards(result.documents, ragEvidence);
     if (result.graph && result.graph.nodes) renderGraph(result.graph);
     updatePipeline(result);
     return result;
@@ -452,14 +550,13 @@ async function compareQuestion() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload("hybrid")),
     });
+    state.hasCompare = true;
+    state.lastQuestion = questionInput.value;
     renderCompare(result.results || {});
     const hybrid = result.results?.hybrid;
     if (hybrid) {
       setTags(hybrid.entities || []);
-      contextBox.textContent = hybrid.context || "";
-      answerBox.innerHTML = renderAnswer(hybrid.answer || "");
       llmStatus.textContent = `${hybrid.model} · comparacao ${hybrid.llmStatus}`;
-      answerMeta.textContent = `GraphRAG · ${hybrid.retrieval?.method || "sem texto"}`;
       if (hybrid.graph && hybrid.graph.nodes) renderGraph(hybrid.graph);
       updatePipeline(hybrid);
     }
@@ -482,6 +579,11 @@ function renderCompare(results) {
     graph: "Forte para conexoes, centralidade e k-hop; fraco para detalhes narrativos.",
     hybrid: "Combina estrutura e texto: melhor para perguntas com entidades e relacoes.",
   };
+  const badges = {
+    rag: "texto",
+    graph: "estrutura",
+    hybrid: "hibrido",
+  };
   compareResults.innerHTML = "";
   for (const mode of ["rag", "graph", "hybrid"]) {
     const result = results[mode];
@@ -489,6 +591,10 @@ function renderCompare(results) {
     const card = document.createElement("article");
     card.className = `compare-card mode-${mode}`;
     const docs = result.documents || [];
+    const graph = result.graph || {};
+    const entities = (result.entities || []).slice(0, 5).join(", ") || "sem entidades";
+    const method = result.retrieval?.method || (mode === "graph" ? "subgrafo" : "retrieval");
+    const graphMetaText = graph.nodes ? ` · ${graph.nodes.length} nos / ${graph.edges?.length || 0} arestas` : "";
     const evidence = docs
       .slice(0, 3)
       .map((doc) => {
@@ -498,10 +604,14 @@ function renderCompare(results) {
       })
       .join("");
     card.innerHTML = `
-      <h3>${labels[mode]}</h3>
-      <p>${renderAnswer(result.answer || "")}</p>
+      <div class="compare-card-head">
+        <h3>${labels[mode]}</h3>
+        <span class="mode-badge">${badges[mode]}</span>
+      </div>
+      <div class="compare-meta">${escapeHtml(method)} · entidades: ${escapeHtml(entities)}${escapeHtml(graphMetaText)}</div>
+      <div class="compare-answer">${renderAnswer(result.answer || "")}</div>
       <div class="method-note">${limits[mode]}</div>
-      ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : ""}
+      ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : `<p class="muted">Sem evidencias textuais diretas neste modo.</p>`}
     `;
     compareResults.appendChild(card);
   }
@@ -527,15 +637,53 @@ async function loadCypherExamples() {
     const button = document.createElement("button");
     button.className = "query-item";
     button.type = "button";
-    button.innerHTML = `<strong>${escapeHtml(example.title)}</strong><span>${escapeHtml(example.explain)}</span>`;
+    button.dataset.exampleId = example.id;
+    const visual = example.visual || {};
+    const visualHint = visual.center ? `${visual.center} · ${visual.hops || 1}-hop` : "visual livre";
+    button.innerHTML = `
+      <strong>${escapeHtml(example.title)}</strong>
+      <span>${escapeHtml(example.explain)}</span>
+      <small>${escapeHtml(visualHint)}</small>
+    `;
     button.addEventListener("click", () => {
-      cypherInput.value = example.query;
-      document.querySelectorAll(".query-item").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
+      selectCypherExample(example.id, { loadGraph: true });
     });
     cypherExamples.appendChild(button);
   }
-  if (state.cypherExamples[0]) cypherInput.value = state.cypherExamples[0].query;
+  if (state.cypherExamples[0]) selectCypherExample(state.cypherExamples[0].id, { loadGraph: false });
+}
+
+function renderCypherLesson(example) {
+  if (!example) {
+    graphLessonTitle.textContent = "Query customizada";
+    graphLessonText.textContent = "Edite ou rode uma consulta read-only. Se quiser que o grafo acompanhe a tabela, selecione um exemplo didatico.";
+    graphLessonGnn.textContent = "Queries livres nao tem mapeamento didatico automatico.";
+    graphLessonVisual.textContent = "visualizacao livre";
+    graphLessonCaption.textContent = "O grafo permanece no centro e hops atuais.";
+    return;
+  }
+  const visual = example.visual || {};
+  graphLessonTitle.textContent = example.title || "Exemplo Cypher";
+  graphLessonText.textContent = example.lesson || example.explain || "";
+  graphLessonGnn.textContent = example.gnn || "Use a consulta para explicar estrutura e propagacao.";
+  graphLessonVisual.textContent = visual.center ? `${visual.center} · ${visual.hops || 1}-hop` : "visualizacao livre";
+  graphLessonCaption.textContent = visual.caption || "A tabela e o grafo devem ser lidos juntos.";
+}
+
+function selectCypherExample(exampleId, options = {}) {
+  const example = state.cypherExamples.find((item) => item.id === exampleId);
+  if (!example) return null;
+  state.activeCypherExample = example;
+  cypherInput.value = example.query;
+  document.querySelectorAll(".query-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.exampleId === example.id);
+  });
+  renderCypherLesson(example);
+  const visual = example.visual || {};
+  if (visual.center) centerInput.value = visual.center;
+  if (visual.hops) hopsInput.value = String(visual.hops);
+  if (options.loadGraph && visual.center) loadGraph();
+  return example;
 }
 
 async function runCypher() {
@@ -548,6 +696,9 @@ async function runCypher() {
       body: JSON.stringify({ query: cypherInput.value, limit: 100 }),
     });
     renderTable(result.columns || [], result.rows || [], cypherResults);
+    if (state.activeCypherExample?.visual?.center) {
+      await loadGraph();
+    }
   } catch (error) {
     cypherResults.innerHTML = `<p class="error-text">${escapeHtml(error.message)}</p>`;
   } finally {
@@ -569,7 +720,7 @@ function renderTable(columns, rows, target) {
       return `<tr>${cells}</tr>`;
     })
     .join("");
-  target.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  target.innerHTML = `<p class="table-note">${rows.length} linhas retornadas. Leia a tabela junto com o grafo ao lado.</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function formatCell(value) {
@@ -592,6 +743,7 @@ function renderLecture() {
     const button = document.createElement("button");
     button.className = "lecture-step";
     button.classList.toggle("active", index === state.lectureIndex);
+    button.dataset.stepId = step.id;
     button.type = "button";
     button.innerHTML = `<span>${index + 1}</span><strong>${escapeHtml(step.title)}</strong><small>${escapeHtml(step.duration)}</small>`;
     button.addEventListener("click", () => {
@@ -602,9 +754,16 @@ function renderLecture() {
   });
   const step = steps[state.lectureIndex];
   if (!step) return;
+  const progress = steps.length ? ((state.lectureIndex + 1) / steps.length) * 100 : 0;
   lectureDuration.textContent = step.duration;
   lectureTitle.textContent = step.title;
+  lectureProgress.textContent = `Etapa ${state.lectureIndex + 1} de ${steps.length}`;
+  lectureProgressBar.style.width = `${progress}%`;
   lecturePoints.innerHTML = (step.talkingPoints || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("");
+  lectureDemoAction.textContent = step.demoAction || "Aplique o passo no playground e discuta o resultado.";
+  lectureSpeakerNotes.innerHTML = (step.speakerNotes || [])
+    .map((note) => `<li>${escapeHtml(note)}</li>`)
+    .join("");
   quizQuestion.textContent = step.quiz?.question || "-";
   quizAnswer.textContent = "";
   quizAnswer.dataset.answer = step.quiz?.answer || "";
@@ -614,11 +773,19 @@ function applyLectureStep() {
   const step = state.lectureSteps[state.lectureIndex];
   if (!step) return;
   questionInput.value = step.question || questionInput.value;
+  if (step.center) centerInput.value = step.center;
+  if (step.hops) hopsInput.value = String(step.hops);
+  if (step.topK) topKInput.value = String(step.topK);
   if (["rag", "graph", "hybrid"].includes(step.mode)) modeInput.value = step.mode;
   if (step.mode === "compare") setView("compare");
   else if (step.mode === "overview") setView("overview");
   else if (step.mode === "hybrid") setView("graphrag");
   else setView(step.mode);
+  if (step.cypherExample) {
+    selectCypherExample(step.cypherExample, { loadGraph: true });
+  } else if (step.mode === "graph") {
+    loadGraph();
+  }
 }
 
 function renderPrompts() {
@@ -671,6 +838,7 @@ async function boot() {
   setTags([]);
   renderPrompts();
   setupGraphPanZoom();
+  setView(activeView());
   const modelsPromise = loadModels();
   const vectorPromise = loadVectorStatus();
   try {
@@ -697,6 +865,18 @@ async function boot() {
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
+document.querySelectorAll(".demo-jump").forEach((button) => {
+  button.addEventListener("click", () => {
+    questionInput.value = button.dataset.demoQuestion || questionInput.value;
+    modeInput.value = button.dataset.demoMode || modeInput.value;
+    setView(button.dataset.demoView || "overview");
+  });
+});
+questionInput.addEventListener("input", () => {
+  state.hasCompare = false;
+  state.lastAnswerMode = null;
+  updateViewPlaceholders(activeView());
+});
 graphButton.addEventListener("click", loadGraph);
 askButton.addEventListener("click", () => askQuestion());
 ragSearchButton.addEventListener("click", () => askQuestion("rag"));
@@ -706,6 +886,11 @@ compareViewButton.addEventListener("click", compareQuestion);
 runCypherButton.addEventListener("click", runCypher);
 copyCypherButton.addEventListener("click", () => copyText(cypherInput.value));
 copyStarterCypher.addEventListener("click", () => copyText(state.cypherExamples[0]?.query || ""));
+cypherInput.addEventListener("input", () => {
+  state.activeCypherExample = null;
+  document.querySelectorAll(".query-item").forEach((item) => item.classList.remove("active"));
+  renderCypherLesson(null);
+});
 hopsInput.addEventListener("change", loadGraph);
 centerInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loadGraph();
@@ -724,6 +909,14 @@ prevLectureButton.addEventListener("click", () => {
 nextLectureButton.addEventListener("click", () => {
   state.lectureIndex = Math.min(state.lectureSteps.length - 1, state.lectureIndex + 1);
   renderLecture();
+});
+document.querySelectorAll(".lecture-nav-button").forEach((button) => {
+  button.addEventListener("click", () => {
+    const direction = button.dataset.lectureNav;
+    state.lectureIndex += direction === "next" ? 1 : -1;
+    state.lectureIndex = Math.max(0, Math.min(state.lectureSteps.length - 1, state.lectureIndex));
+    renderLecture();
+  });
 });
 revealQuizButton.addEventListener("click", () => {
   quizAnswer.textContent = quizAnswer.dataset.answer || "";

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-control-width" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graph-lecture" />
   </head>
   <body>
     <main class="app-shell">
@@ -32,31 +32,42 @@
         <span>Personagens: --</span>
       </section>
 
-      <section class="workspace">
+      <section class="workspace" id="workspaceShell" data-view="overview">
         <aside class="control-panel">
-          <label class="field">
-            <span>Pergunta</span>
-            <textarea id="questionInput" rows="5">Como Frodo se conecta a Sauron?</textarea>
-          </label>
+          <div class="control-heading">
+            <p id="controlKicker">Demo</p>
+            <h2 id="controlTitle">Comece pela visao geral</h2>
+            <p id="controlHint">Escolha um modo para configurar somente o que importa naquela etapa.</p>
+          </div>
 
-          <div class="control-row">
-            <label class="field compact">
-              <span>Saltos</span>
-              <select id="hopsInput">
-                <option value="1">1-hop</option>
-                <option value="2" selected>2-hop</option>
-                <option value="3">3-hop</option>
-                <option value="4">4-hop</option>
-              </select>
+          <section class="control-block overview-controls" aria-label="Atalhos da demo">
+            <button class="demo-jump" data-demo-mode="rag" data-demo-question="Por que o Anel importa para Frodo?" data-demo-view="rag" type="button">
+              <strong>1. RAG</strong>
+              <span>texto primeiro, sem estrutura explicita</span>
+            </button>
+            <button class="demo-jump" data-demo-mode="graph" data-demo-question="Qual o caminho estrutural entre Frodo e Sauron?" data-demo-view="graph" type="button">
+              <strong>2. Graph</strong>
+              <span>vizinhos, caminhos e centralidade</span>
+            </button>
+            <button class="demo-jump" data-demo-mode="hybrid" data-demo-question="Qual a relacao de Frodo com Sauron?" data-demo-view="graphrag" type="button">
+              <strong>3. GraphRAG</strong>
+              <span>grafo guia evidencias textuais</span>
+            </button>
+          </section>
+
+          <section class="control-block question-controls" aria-label="Pergunta">
+            <label class="field">
+              <span>Pergunta</span>
+              <textarea id="questionInput" rows="5">Como Frodo se conecta a Sauron?</textarea>
             </label>
+          </section>
+
+          <section class="control-block retrieval-controls" aria-label="Parametros de recuperacao textual">
             <label class="field compact">
               <span>Top-k</span>
               <input id="topKInput" min="3" max="16" step="1" type="number" value="8" />
             </label>
-          </div>
-
-          <div class="control-row">
-            <label class="field compact">
+            <label class="field compact mode-field">
               <span>Modo</span>
               <select id="modeInput">
                 <option value="hybrid" selected>GraphRAG</option>
@@ -64,42 +75,69 @@
                 <option value="graph">Graph</option>
               </select>
             </label>
-            <label class="field compact">
-              <span>Centro</span>
-              <input id="centerInput" value="Frodo" />
+          </section>
+
+          <section class="control-block graph-controls" aria-label="Parametros do grafo">
+            <div class="control-row">
+              <label class="field compact">
+                <span>Saltos</span>
+                <select id="hopsInput">
+                  <option value="1">1-hop</option>
+                  <option value="2" selected>2-hop</option>
+                  <option value="3">3-hop</option>
+                  <option value="4">4-hop</option>
+                </select>
+              </label>
+              <label class="field compact">
+                <span>Centro</span>
+                <input id="centerInput" value="Frodo" />
+              </label>
+            </div>
+            <button id="graphButton" class="secondary-button wide-button" type="button">Atualizar Grafo</button>
+          </section>
+
+          <section class="control-block model-controls" aria-label="Modelo local">
+            <label class="field">
+              <span>Modelo LLM</span>
+              <select id="modelInput">
+                <option value="">Carregando Ollama...</option>
+              </select>
             </label>
-          </div>
+            <label class="toggle-field">
+              <input id="llmInput" type="checkbox" />
+              <span>LLM local</span>
+            </label>
+          </section>
 
-          <label class="field">
-            <span>Modelo LLM</span>
-            <select id="modelInput">
-              <option value="">Carregando Ollama...</option>
-            </select>
-          </label>
+          <section class="control-block run-controls" aria-label="Acoes">
+            <button id="askButton" class="primary-button action-ask" type="button">Responder</button>
+            <button id="compareButton" class="primary-button action-compare" type="button">Comparar modos</button>
+          </section>
 
-          <label class="toggle-field">
-            <input id="llmInput" type="checkbox" />
-            <span>LLM local</span>
-          </label>
+          <section class="control-block lecture-controls" aria-label="Controles da aula">
+            <p class="control-note">Use esta tela como roteiro. O botao de aplicar passo troca a pergunta e abre a view correta.</p>
+            <div class="button-row">
+              <button class="secondary-button" id="prevLectureButton" type="button">Voltar</button>
+              <button class="primary-button" id="nextLectureButton" type="button">Avancar</button>
+            </div>
+          </section>
 
-          <div class="button-row">
-            <button id="askButton" class="primary-button" type="button">Responder</button>
-            <button id="compareButton" class="secondary-button" type="button">Comparar</button>
-            <button id="graphButton" class="secondary-button" type="button">Grafo</button>
-          </div>
+          <section class="control-block entity-controls" aria-label="Entidades detectadas">
+            <div class="mini-panel">
+              <h2>Entidades Detectadas</h2>
+              <div id="entitiesList" class="tag-list"></div>
+            </div>
+          </section>
 
-          <div class="mini-panel">
-            <h2>Entidades Detectadas</h2>
-            <div id="entitiesList" class="tag-list"></div>
-          </div>
-
-          <div class="mini-panel">
-            <h2>Status</h2>
-            <dl class="status-list">
-              <div><dt>LLM</dt><dd id="llmStatus">Aguardando</dd></div>
-              <div><dt>Vetores</dt><dd id="vectorStatus">Carregando</dd></div>
-            </dl>
-          </div>
+          <section class="control-block status-controls" aria-label="Status local">
+            <div class="mini-panel">
+              <h2>Status</h2>
+              <dl class="status-list">
+                <div><dt>LLM</dt><dd id="llmStatus">Aguardando</dd></div>
+                <div><dt>Vetores</dt><dd id="vectorStatus">Carregando</dd></div>
+              </dl>
+            </div>
+          </section>
         </aside>
 
         <section class="content-panel">
@@ -165,6 +203,26 @@
               </div>
               <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
             </div>
+            <article class="graph-lesson" id="graphLesson">
+              <div class="lesson-head">
+                <div>
+                  <p class="card-kicker">Exemplo selecionado</p>
+                  <h3 id="graphLessonTitle">Escolha uma query</h3>
+                </div>
+                <span id="graphLessonVisual" class="lesson-visual">visualizacao livre</span>
+              </div>
+              <p id="graphLessonText">Selecione uma consulta para ver a leitura didatica e atualizar o grafo automaticamente.</p>
+              <div class="lesson-grid">
+                <article>
+                  <strong>GNN</strong>
+                  <span id="graphLessonGnn">O link com message passing aparece aqui.</span>
+                </article>
+                <article>
+                  <strong>Como apresentar</strong>
+                  <span id="graphLessonCaption">A tabela e o grafo devem ser lidos juntos.</span>
+                </article>
+              </div>
+            </article>
             <div class="graph-workbench">
               <aside class="query-rail">
                 <h3>Exemplos</h3>
@@ -218,8 +276,8 @@
                 <p>Roteiro interativo de 40 minutos com parametros e quizzes locais.</p>
               </div>
               <div class="button-row">
-                <button class="secondary-button" id="prevLectureButton" type="button">Voltar</button>
-                <button class="primary-button" id="nextLectureButton" type="button">Avancar</button>
+                <button class="secondary-button lecture-nav-button" type="button" data-lecture-nav="prev">Voltar</button>
+                <button class="primary-button lecture-nav-button" type="button" data-lecture-nav="next">Avancar</button>
               </div>
             </div>
             <div class="lecture-layout">
@@ -227,7 +285,19 @@
               <article class="lecture-card">
                 <p class="lecture-duration" id="lectureDuration">-</p>
                 <h3 id="lectureTitle">-</h3>
+                <div class="lecture-progress">
+                  <span id="lectureProgress">Etapa -</span>
+                  <div><span id="lectureProgressBar"></span></div>
+                </div>
                 <ul id="lecturePoints"></ul>
+                <div class="lecture-demo">
+                  <strong>Demo ao vivo</strong>
+                  <p id="lectureDemoAction">-</p>
+                </div>
+                <details class="lecture-notes" open>
+                  <summary>Notas para falar</summary>
+                  <ul id="lectureSpeakerNotes"></ul>
+                </details>
                 <div class="quiz-box">
                   <strong>Quiz</strong>
                   <p id="quizQuestion">-</p>
@@ -271,6 +341,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-lecture-vectors-2"></script>
+    <script src="/static/app.js?v=20260525-graph-lecture"></script>
   </body>
 </html>
