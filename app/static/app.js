@@ -28,6 +28,7 @@ const topList = document.querySelector("#topList");
 const statsStrip = document.querySelector("#statsStrip");
 const llmStatus = document.querySelector("#llmStatus");
 const vectorStatus = document.querySelector("#vectorStatus");
+const runActivity = document.querySelector("#runActivity");
 const promptGrid = document.querySelector("#promptGrid");
 const ragEvidence = document.querySelector("#ragEvidence");
 const traceGroundingMeta = document.querySelector("#traceGroundingMeta");
@@ -329,6 +330,8 @@ const state = {
   hasCompare: false,
   strategyCompareResults: null,
   strategyCompareQuestion: "",
+  activeActions: new Map(),
+  actionSeq: 0,
   lastAnswerMode: null,
   lastQuestion: "",
   lastGraph: null,
@@ -389,6 +392,79 @@ function setAnswerPlaceholder(meta, text) {
   answerMeta.textContent = meta;
   answerBox.innerHTML = `<p class="muted">${escapeHtml(text)}</p>`;
   contextBox.textContent = "";
+}
+
+function uniqueButtons(buttons) {
+  return [...new Set(buttons.filter(Boolean))];
+}
+
+function renderActionActivity(lastMessage = "") {
+  if (!runActivity) return;
+  const actions = [...state.activeActions.values()];
+  if (!actions.length) {
+    runActivity.classList.remove("busy");
+    runActivity.removeAttribute("title");
+    runActivity.textContent = lastMessage || "Aguardando";
+    return;
+  }
+  const current = actions[actions.length - 1];
+  runActivity.classList.add("busy");
+  runActivity.title = current.log.join("\n");
+  runActivity.innerHTML = `
+    <span class="mini-spinner" aria-hidden="true"></span>
+    <span>${escapeHtml(current.label)}</span>
+    <small>${actions.length > 1 ? `${actions.length} operacoes` : "em andamento"}</small>
+  `;
+}
+
+function beginAction(button, options = {}) {
+  if (!button) return () => {};
+  const actionId = ++state.actionSeq;
+  const label = options.label || button.textContent.trim() || "Executando";
+  const steps = options.steps || [];
+  const relatedButtons = uniqueButtons([button, ...(options.relatedButtons || [])]);
+  const originalButtons = relatedButtons.map((item) => ({
+    button: item,
+    disabled: item.disabled,
+    html: item.innerHTML,
+    title: item.getAttribute("title"),
+    actionLog: item.dataset.actionLog,
+  }));
+  const log = [
+    label,
+    ...steps,
+    `Entrada: ${options.subject || currentQuestion() || "sem pergunta textual"}`,
+  ].filter(Boolean);
+
+  relatedButtons.forEach((item) => {
+    item.disabled = true;
+  });
+  button.classList.add("is-running");
+  button.setAttribute("aria-busy", "true");
+  button.dataset.actionLog = log.map((line, index) => (index === 0 ? line : `- ${line}`)).join("\n");
+  button.title = log.join("\n");
+  button.innerHTML = `
+    <span class="button-spinner" aria-hidden="true"></span>
+    <span class="button-label">${escapeHtml(label)}</span>
+  `;
+
+  state.activeActions.set(actionId, { label, log, startedAt: Date.now() });
+  renderActionActivity();
+
+  return (lastMessage = "Pronto") => {
+    state.activeActions.delete(actionId);
+    originalButtons.forEach((entry) => {
+      entry.button.disabled = entry.disabled;
+      entry.button.innerHTML = entry.html;
+      if (entry.title == null) entry.button.removeAttribute("title");
+      else entry.button.setAttribute("title", entry.title);
+      if (entry.actionLog == null) delete entry.button.dataset.actionLog;
+      else entry.button.dataset.actionLog = entry.actionLog;
+      entry.button.classList.remove("is-running");
+      entry.button.removeAttribute("aria-busy");
+    });
+    renderActionActivity(lastMessage);
+  };
 }
 
 function currentQuestion() {
@@ -836,9 +912,20 @@ function renderGraph(graph, options = {}) {
   setGraphDetail(`${nodes.length} nos · ${edges.length} arestas. Clique em um no ou aresta para detalhes.`);
 }
 
-async function loadGraph() {
+async function loadGraph(options = {}) {
   const center = encodeURIComponent(centerInput.value.trim());
   const hops = encodeURIComponent(hopsInput.value);
+  const done = options.button
+    ? beginAction(options.button, {
+        label: "Carregando grafo",
+        steps: [
+      `Centro: ${decodeURIComponent(center || "") || "sem centro"}`,
+      `Expansao: ${decodeURIComponent(hops || "2")}-hop`,
+      "Buscando subgrafo no Neo4j",
+    ],
+    subject: centerInput.value.trim() || "subgrafo centro/hops",
+  })
+    : () => {};
   graphMeta.textContent = "Carregando subgrafo...";
   try {
     const graph = await getJson(`/api/graph?center=${center}&hops=${hops}&limit=180`);
@@ -849,8 +936,10 @@ async function loadGraph() {
     };
     renderGraph(graph, { meta: `Centro/Hops · ${graph.nodes?.length || 0} nos · ${graph.edges?.length || 0} arestas` });
     graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>Subgrafo por centro/hops carregado. Use Executar + Explicar para gerar uma leitura estrutural da query.</p>`;
+    done(`Grafo carregado: ${graph.nodes?.length || 0} nos`);
   } catch (error) {
     graphMeta.textContent = `Erro: ${error.message}`;
+    done("Erro ao carregar grafo");
   }
 }
 
@@ -1305,13 +1394,23 @@ function answerMetaText(result, fallbackTopK) {
   return `${mode}${strategy} · ${scoreMode} · ${topK}`;
 }
 
-async function askQuestion(modeOverride = null) {
+async function askQuestion(modeOverride = null, triggerButton = askButton) {
   const requestedMode = modeOverride || modeInput.value;
+  const modeLabel = requestedMode === "rag" ? "Buscando RAG" : requestedMode === "graph" ? "Buscando grafo" : "Executando GraphRAG";
+  const done = beginAction(triggerButton, {
+    label: llmInput.checked ? `${modeLabel} + LLM` : modeLabel,
+    relatedButtons: [askButton, ragSearchButton, hybridButton, compareButton, compareViewButton, strategyCompareButton],
+    steps: [
+      `Modo: ${requestedMode}`,
+      `Top-k: ${topKInput.value}`,
+      `Hops: ${hopsInput.value}`,
+      llmInput.checked ? `Sintese: ${modelInput.value || "modelo default"}` : "Sintese: retrieval-only",
+    ],
+  });
   answerBox.textContent = "";
   contextBox.textContent = "";
   llmStatus.textContent = llmInput.checked ? "Ollama sintetizando evidencias..." : "Retrieval-only: sem sintese com LLM";
   answerMeta.textContent = "Executando retrieval...";
-  askButton.disabled = true;
   try {
     const result = await getJson("/api/ask", {
       method: "POST",
@@ -1329,22 +1428,30 @@ async function askQuestion(modeOverride = null) {
     if (result.graph && result.graph.nodes) renderGraph(result.graph);
     updatePipeline(result);
     if ((result.mode || requestedMode) === "hybrid") renderGraphRagTrace(result);
+    done(`${result.mode || requestedMode} pronto`);
     return result;
   } catch (error) {
     llmStatus.textContent = `Erro: ${error.message}`;
     answerMeta.textContent = "Erro na execucao";
+    done("Erro na execucao");
     return null;
-  } finally {
-    askButton.disabled = false;
   }
 }
 
-async function compareQuestion() {
+async function compareQuestion(triggerButton = compareButton) {
+  const done = beginAction(triggerButton, {
+    label: llmInput.checked ? "Comparando + LLM" : "Comparando modos",
+    relatedButtons: [compareButton, compareViewButton, askButton, ragSearchButton, hybridButton],
+    steps: [
+      "Executando RAG textual",
+      "Executando Graph-only",
+      `Executando GraphRAG (${strategyById(graphRagStrategyInput?.value || "kg_index").shortName})`,
+      llmInput.checked ? `Sintese: ${modelInput.value || "modelo default"}` : "Sintese: retrieval-only",
+    ],
+  });
   compareResults.innerHTML = "";
   answerMeta.textContent = "Comparando RAG, Graph e GraphRAG...";
   llmStatus.textContent = llmInput.checked ? "Comparando com sintese Ollama..." : "Comparando em retrieval-only...";
-  compareButton.disabled = true;
-  compareViewButton.disabled = true;
   try {
     const result = await getJson("/api/compare", {
       method: "POST",
@@ -1362,20 +1469,28 @@ async function compareQuestion() {
       updatePipeline(hybrid);
       renderGraphRagTrace(hybrid);
     }
+    done("Comparacao pronta");
   } catch (error) {
     llmStatus.textContent = `Erro: ${error.message}`;
-  } finally {
-    compareButton.disabled = false;
-    compareViewButton.disabled = false;
+    done("Erro na comparacao");
   }
 }
 
 async function compareGraphRagStrategies() {
   if (!strategyCompareResults) return;
+  const done = beginAction(strategyCompareButton, {
+    label: "Comparando estrategias",
+    relatedButtons: [strategyCompareButton, hybridButton, askButton],
+    steps: [
+      "Rodando seis variantes GraphRAG",
+      "Retrieval-only para mostrar diferencas reais",
+      `Top-k: ${topKInput.value}`,
+      `Hops: ${hopsInput.value}`,
+    ],
+  });
   strategyCompareResults.innerHTML = `<article class="trace-doc-empty">Comparando estrategias em retrieval-only...</article>`;
   state.strategyCompareResults = null;
   state.strategyCompareQuestion = currentQuestion();
-  strategyCompareButton.disabled = true;
   try {
     const result = await getJson("/api/graphrag/compare", {
       method: "POST",
@@ -1385,11 +1500,11 @@ async function compareGraphRagStrategies() {
     state.strategyCompareResults = result.results || {};
     state.strategyCompareQuestion = result.question || currentQuestion();
     renderStrategyCompare(result.results || {});
+    done("Estrategias comparadas");
   } catch (error) {
     state.strategyCompareResults = null;
     strategyCompareResults.innerHTML = `<article class="trace-doc-empty error-text">${escapeHtml(error.message)}</article>`;
-  } finally {
-    strategyCompareButton.disabled = false;
+    done("Erro ao comparar estrategias");
   }
 }
 
@@ -1555,7 +1670,7 @@ async function loadCypherExamples() {
     `;
     button.addEventListener("click", async () => {
       selectCypherExample(example.id);
-      await runCypher();
+      await runCypher({ button });
     });
     cypherExamples.appendChild(button);
   }
@@ -1597,7 +1712,7 @@ function selectCypherExample(exampleId, options = {}) {
   const visual = example.visual || {};
   if (visual.center) centerInput.value = visual.center;
   if (visual.hops) hopsInput.value = String(visual.hops);
-  if (options.loadGraph && visual.center) loadGraph();
+  if (options.loadGraph && visual.center) loadGraph({ button: graphButton });
   return example;
 }
 
@@ -1617,9 +1732,20 @@ function renderCypherResult(result) {
   renderTable(result.columns || [], result.rows || [], cypherResults, result.graphStatus);
 }
 
-async function runCypher() {
+async function runCypher(options = {}) {
+  const done = options.manageAction === false
+    ? () => {}
+    : beginAction(options.button || runCypherButton, {
+        label: "Executando Cypher",
+        relatedButtons: [runCypherButton],
+        steps: [
+        "Validando query read-only",
+        "Consultando Neo4j",
+        "Renderizando tabela e subgrafo",
+      ],
+      subject: cypherInput.value.trim().split("\n")[0] || "Cypher read-only",
+    });
   cypherResults.innerHTML = `<p class="muted">Rodando consulta read-only...</p>`;
-  runCypherButton.disabled = true;
   try {
     const result = await getJson("/api/cypher/run", {
       method: "POST",
@@ -1627,13 +1753,13 @@ async function runCypher() {
       body: JSON.stringify({ query: cypherInput.value, limit: 100 }),
     });
     renderCypherResult(result);
+    done(`Query pronta: ${(result.rows || []).length} linhas`);
     return result;
   } catch (error) {
     state.lastCypherResult = null;
     cypherResults.innerHTML = `<p class="error-text">${escapeHtml(error.message)}</p>`;
+    done("Erro na query");
     return null;
-  } finally {
-    runCypherButton.disabled = false;
   }
 }
 
@@ -1643,7 +1769,16 @@ async function generateCypher() {
     cypherGenerationStatus.textContent = "Descreva a consulta antes de gerar.";
     return;
   }
-  generateCypherButton.disabled = true;
+  const done = beginAction(generateCypherButton, {
+    label: "Gerando Cypher",
+    relatedButtons: [generateCypherButton, runCypherButton, synthesizeGraphButton],
+    steps: [
+      `Modelo: ${modelInput.value || "modelo default"}`,
+      "Contrato: JSON CypherDraft",
+      "Sanitizacao read-only antes de mostrar",
+    ],
+    subject: question,
+  });
   cypherGenerationStatus.textContent = "Ollama gerando Cypher read-only...";
   try {
     const result = await getJson("/api/cypher/generate", {
@@ -1657,16 +1792,27 @@ async function generateCypher() {
     renderCypherLesson(null);
     const warnings = (result.warnings || []).length ? ` Alertas: ${(result.warnings || []).join(" ")}` : "";
     cypherGenerationStatus.textContent = `${result.explanation || "Query gerada para revisao."}${warnings}`;
+    done("Cypher gerado");
   } catch (error) {
     cypherGenerationStatus.textContent = `Erro ao gerar Cypher: ${error.message}`;
-  } finally {
-    generateCypherButton.disabled = false;
+    done("Erro ao gerar Cypher");
   }
 }
 
-async function synthesizeGraph() {
+async function synthesizeGraph(options = {}) {
   const result = state.lastCypherResult || { query: cypherInput.value, rows: [], graph: state.lastGraph || {} };
-  synthesizeGraphButton.disabled = true;
+  const done = options.manageAction === false
+    ? () => {}
+    : beginAction(options.button || synthesizeGraphButton, {
+        label: "Explicando grafo",
+        relatedButtons: [synthesizeGraphButton, runCypherButton],
+        steps: [
+          "Serializando nos, arestas e linhas",
+          `Modelo: ${modelInput.value || "modelo default"}`,
+          "Contrato: Graph-only, sem chunks textuais",
+        ],
+        subject: cypherPromptInput.value.trim() || questionInput.value.trim() || "leitura estrutural",
+      });
   graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>Ollama sintetizando estrutura...</p>`;
   try {
     const payload = await getJson("/api/cypher/synthesize", {
@@ -1682,17 +1828,36 @@ async function synthesizeGraph() {
     });
     graphSynthesis.innerHTML = `<strong>Leitura Graph-only · ${escapeHtml(payload.model || "Ollama")}</strong><div>${renderStructuredAnswer(payload)}</div>`;
     llmStatus.textContent = `${payload.model || modelInput.value || "Ollama"} · ${payload.llmStatus}`;
+    done("Leitura estrutural pronta");
+    return payload;
   } catch (error) {
     graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p class="error-text">${escapeHtml(error.message)}</p>`;
-  } finally {
-    synthesizeGraphButton.disabled = false;
+    done("Erro na leitura estrutural");
+    return null;
   }
 }
 
 async function runCypherAndSynthesize() {
-  const result = await runCypher();
-  if (result) {
-    await synthesizeGraph();
+  const done = beginAction(synthesizeGraphButton, {
+    label: "Executar + explicar",
+    relatedButtons: [synthesizeGraphButton, runCypherButton, generateCypherButton],
+    steps: [
+      "1. Executar Cypher read-only",
+      "2. Renderizar subgrafo",
+      "3. Sintetizar leitura Graph-only",
+    ],
+    subject: cypherPromptInput.value.trim() || questionInput.value.trim() || "executar e explicar",
+  });
+  try {
+    const result = await runCypher({ manageAction: false });
+    if (result) {
+      const synthesis = await synthesizeGraph({ manageAction: false });
+      done(synthesis ? "Query explicada" : "Erro na leitura estrutural");
+    } else {
+      done("Query nao retornou resultado");
+    }
+  } catch (_error) {
+    done("Erro ao executar e explicar");
   }
 }
 
@@ -1834,7 +1999,7 @@ function applyLectureStep() {
   if (step.cypherExample) {
     selectCypherExample(step.cypherExample, { loadGraph: true });
   } else if (step.mode === "graph") {
-    loadGraph();
+    loadGraph({ button: graphButton });
   }
 }
 
@@ -1938,14 +2103,14 @@ questionInput.addEventListener("input", () => {
   state.lastAnswerMode = null;
   updateViewPlaceholders(activeView());
 });
-graphButton.addEventListener("click", loadGraph);
-askButton.addEventListener("click", () => askQuestion());
-ragSearchButton.addEventListener("click", () => askQuestion("rag"));
-hybridButton.addEventListener("click", () => askQuestion("hybrid"));
+graphButton.addEventListener("click", () => loadGraph({ button: graphButton }));
+askButton.addEventListener("click", () => askQuestion(null, askButton));
+ragSearchButton.addEventListener("click", () => askQuestion("rag", ragSearchButton));
+hybridButton.addEventListener("click", () => askQuestion("hybrid", hybridButton));
 strategyCompareButton.addEventListener("click", compareGraphRagStrategies);
-compareButton.addEventListener("click", compareQuestion);
-compareViewButton.addEventListener("click", compareQuestion);
-runCypherButton.addEventListener("click", runCypher);
+compareButton.addEventListener("click", () => compareQuestion(compareButton));
+compareViewButton.addEventListener("click", () => compareQuestion(compareViewButton));
+runCypherButton.addEventListener("click", () => runCypher({ button: runCypherButton }));
 generateCypherButton.addEventListener("click", generateCypher);
 synthesizeGraphButton.addEventListener("click", runCypherAndSynthesize);
 copyCypherButton.addEventListener("click", () => copyText(cypherInput.value));

@@ -783,6 +783,65 @@ button:disabled {
   transform: none;
 }
 
+button.is-running {
+  opacity: 1;
+  overflow: visible;
+}
+
+button.is-running .button-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button-spinner,
+.mini-spinner {
+  animation: spin 820ms linear infinite;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 15px;
+  width: 15px;
+}
+
+.mini-spinner {
+  height: 12px;
+  width: 12px;
+}
+
+button[data-action-log]::before {
+  background: rgba(37, 29, 16, 0.96);
+  border: 1px solid rgba(224, 193, 106, 0.38);
+  border-radius: var(--radius-md);
+  bottom: calc(100% + 9px);
+  box-shadow: 0 18px 38px rgba(24, 18, 9, 0.3);
+  color: #fff7df;
+  content: attr(data-action-log);
+  font-size: 11px;
+  font-weight: 750;
+  left: 50%;
+  line-height: 1.38;
+  max-width: min(300px, 76vw);
+  opacity: 0;
+  padding: 9px 10px;
+  pointer-events: none;
+  position: absolute;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+  white-space: pre-line;
+  width: max-content;
+  z-index: 30;
+}
+
+button[data-action-log]:hover::before,
+button[data-action-log]:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 .primary-button {
   background: linear-gradient(180deg, #257656, var(--green-dark));
   border-color: rgba(224, 193, 106, 0.44);
@@ -868,6 +927,21 @@ button:disabled {
   font-size: 12px;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.status-list dd.busy {
+  align-items: center;
+  color: var(--green-dark);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 850;
+}
+
+.status-list dd.busy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
 }
 
 .status-list dd.bad {
@@ -2786,6 +2860,12 @@ code {
   }
   to {
     left: 135%;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
