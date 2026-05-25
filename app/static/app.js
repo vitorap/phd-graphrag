@@ -61,7 +61,8 @@ function renderStats(stats) {
     <span>Relacoes: ${stats.relationships}</span>
     <span>Personagens: ${stats.characters}</span>
     <span>Docs RAG: ${stats.retrievalDocuments || 0}</span>
-    <span>Chunks: ${stats.textChunks || 0}</span>
+    <span>Chunks livro: ${stats.textChunks || 0}</span>
+    <span>Falas script: ${stats.dialogueLines || 0}</span>
   `;
   topList.innerHTML = "";
   for (const item of stats.topCharacters || []) {
