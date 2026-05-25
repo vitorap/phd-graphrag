@@ -48,7 +48,7 @@ CYPHER_EXAMPLES = [
         "id": "frodo-neighbors",
         "title": "1-hop: vizinhos de Frodo",
         "explain": "Mostra quem envia informacao diretamente para Frodo no grafo.",
-        "lesson": "Use este exemplo para explicar que 1-hop e o campo receptivo imediato: cada vizinho pode contribuir uma mensagem para atualizar a representacao de Frodo.",
+        "lesson": "1-hop e o campo receptivo imediato: cada vizinho pode contribuir uma mensagem para atualizar a representacao de Frodo.",
         "gnn": "Message passing camada 1: agrega atributos e relacoes dos vizinhos diretos.",
         "visual": {
             "center": "Frodo",
@@ -88,7 +88,7 @@ RETURN [n IN nodes(p) | n.name] AS caminho,
         "id": "frodo-sauron-bridges",
         "title": "Pontes em 2-hop",
         "explain": "Lista personagens e conceitos que conectam Frodo e Sauron em dois saltos.",
-        "lesson": "Bom para mostrar que o grafo encontra candidatos de explicacao antes do texto: Anel, Mordor, inimigos, coocorrencias ou outros conectores.",
+        "lesson": "O grafo encontra candidatos de explicacao antes do texto: Anel, Mordor, inimigos, coocorrencias ou outros conectores.",
         "gnn": "2-hop corresponde a duas rodadas de propagacao; aumenta cobertura, mas tambem pode trazer ruido.",
         "visual": {
             "center": "Frodo",
@@ -110,7 +110,7 @@ LIMIT 20
         "id": "shared-documents",
         "title": "Chunks que citam Frodo e Sauron",
         "explain": "Conecta a estrutura do grafo com unidades recuperaveis pelo RAG.",
-        "lesson": "Aqui a ponte com GraphRAG fica explicita: o grafo localiza entidades, mas a explicacao final vem dos documentos que mencionam essas entidades.",
+        "lesson": "A ponte com GraphRAG fica explicita: o grafo localiza entidades, mas a explicacao final vem dos documentos que mencionam essas entidades.",
         "gnn": "Depois de propagar no grafo, a recuperacao textual usa os nos ativados como sinal de contexto.",
         "visual": {
             "center": "Sauron",
@@ -133,12 +133,12 @@ LIMIT 12
         "id": "pagerank",
         "title": "Top PageRank",
         "explain": "Centralidade estrutural calculada no grafo personagem-personagem.",
-        "lesson": "PageRank ajuda a discutir quais personagens sao estruturalmente influentes, nao necessariamente os mais importantes narrativamente.",
+        "lesson": "PageRank separa influencia estrutural de importancia narrativa: personagens centrais no grafo nao sao sempre os protagonistas.",
         "gnn": "Centralidade e um resumo global; GNNs aprendem representacoes que podem incorporar sinais estruturais semelhantes.",
         "visual": {
             "center": "Frodo",
             "hops": 2,
-            "caption": "A visualizacao em Frodo ajuda a comparar PageRank local com ranking global.",
+            "caption": "A visualizacao em Frodo contrasta vizinhanca local com ranking global.",
         },
         "query": """
 MATCH (c:Character)
@@ -153,9 +153,9 @@ LIMIT 15
     {
         "id": "relationship-types",
         "title": "Tipos de relacao",
-        "explain": "Ajuda a explicar que o grafo mistura ontologia, coocorrencia, falas e texto.",
-        "lesson": "Esta query e boa para mostrar que o KG nao e uma rede social simples: ha arestas semanticas, textuais, estruturais e preditas.",
-        "gnn": "Em grafos heterogeneos, o tipo da aresta muda a mensagem. Isso abre a conversa sobre relational GNNs.",
+        "explain": "Expõe que o grafo mistura ontologia, coocorrencia, falas e texto.",
+        "lesson": "O KG nao e uma rede social simples: ha arestas semanticas, textuais, estruturais e preditas.",
+        "gnn": "Em grafos heterogeneos, o tipo da aresta muda a mensagem e aproxima o problema de relational GNNs.",
         "visual": {
             "center": "Gandalf",
             "hops": 1,
@@ -177,7 +177,7 @@ LIMIT 20
         "visual": {
             "center": "Samwise",
             "hops": 1,
-            "caption": "Samwise aparece como vizinho forte de Frodo e ajuda a discutir peso de aresta.",
+            "caption": "Samwise aparece como vizinho forte de Frodo e evidencia peso de aresta.",
         },
         "query": """
 MATCH (a:Character)-[r:CO_OCCURS_WITH]-(b:Character)
@@ -191,7 +191,7 @@ LIMIT 20
         "id": "frodo-community",
         "title": "Comunidade de Frodo",
         "explain": "Lista personagens na mesma comunidade estrutural de Frodo.",
-        "lesson": "Comunidades agrupam personagens que compartilham vizinhancas parecidas. E uma forma visual de falar de representacao de grupo.",
+        "lesson": "Comunidades agrupam personagens que compartilham vizinhancas parecidas e resumem representacao de grupo.",
         "gnn": "Embeddings de nos tendem a aproximar entidades com contexto estrutural parecido.",
         "visual": {
             "center": "Frodo",
@@ -215,7 +215,7 @@ LIMIT 20
         "id": "predicted-links",
         "title": "Links preditos",
         "explain": "Mostra arestas inferidas como camada separada de hipoteses.",
-        "lesson": "Use para separar evidencia observada de hipotese predita. Em aula, isso abre a conversa sobre link prediction.",
+        "lesson": "Arestas observadas e hipoteses preditas ficam separadas, preservando auditoria para link prediction.",
         "gnn": "Link prediction e uma tarefa classica de GNN: aprender embeddings para estimar arestas ausentes.",
         "visual": {
             "center": "Sauron",
@@ -260,21 +260,21 @@ LIMIT 20
 LECTURE_STEPS = [
     {
         "id": "opening",
-        "title": "Abertura: a mesma pergunta, tres maquinas",
+        "title": "Pergunta central: uma relacao, tres recuperacoes",
         "duration": "3 min",
         "mode": "overview",
         "question": "Qual a relacao de Frodo com Sauron?",
         "center": "Frodo",
         "hops": 2,
-        "demoAction": "Mostre os numeros do corpus e anuncie que a mesma pergunta sera respondida por texto, grafo e GraphRAG.",
+        "demoAction": "A visao geral consolida corpus, grafo e pergunta Frodo-Sauron em um unico ponto de entrada.",
         "talkingPoints": [
             "O corpus mistura texto completo, scripts, ontologia e redes de personagens.",
             "A pergunta Frodo-Sauron e boa porque exige narrativa textual e estrutura relacional.",
-            "A aula compara tres formas de recuperar contexto, nao tres modelos magicos.",
+            "A interface compara tres formas de recuperar contexto, nao tres modelos magicos.",
         ],
         "speakerNotes": [
-            "Comece pela intuicao: texto lembra cenas; grafo lembra conexoes.",
-            "Avise que a demo e deterministica e roda localmente com Neo4j e Ollama.",
+            "Texto recupera cenas; grafo recupera conexoes.",
+            "A execucao local torna Neo4j, vetores e modelo Ollama auditaveis no mesmo ambiente.",
         ],
         "quiz": {
             "question": "Por que essa pergunta nao e trivial para RAG puro?",
@@ -289,15 +289,15 @@ LECTURE_STEPS = [
         "question": "Que fontes alimentam o grafo?",
         "center": "Frodo",
         "hops": 1,
-        "demoAction": "Passe pelos contadores: entidades, relacoes, fontes, unidades RAG, chunks de livro e falas de script.",
+        "demoAction": "Os contadores separam entidades, relacoes, fontes, unidades RAG, chunks de livro e falas de script.",
         "talkingPoints": [
             "Livros viram TextChunks; scripts viram DialogueLines.",
             "Personagens detectados em texto criam arestas MENTIONS.",
             "Ontologia e redes sociais completam o KG com relacoes semanticas e ponderadas.",
         ],
         "speakerNotes": [
-            "Use os tooltips dos contadores para explicar a diferenca entre unidades RAG, chunks e falas.",
-            "Deixe claro que o grafo nao substitui o texto: ele indexa e organiza o texto.",
+            "Tooltips dos contadores detalham a diferenca entre unidades RAG, chunks e falas.",
+            "O grafo nao substitui o texto: ele indexa e organiza o texto.",
         ],
         "quiz": {
             "question": "Por que falas de script tambem entram como unidades RAG?",
@@ -311,15 +311,15 @@ LECTURE_STEPS = [
         "mode": "rag",
         "question": "Por que o Anel importa para Frodo?",
         "topK": 8,
-        "demoAction": "Rode Buscar Evidencias e mostre ranking, cosine score, fonte e mencoes detectadas.",
+        "demoAction": "O ranking vetorial exibe score, fonte, mencoes detectadas e trecho recuperado.",
         "talkingPoints": [
             "Chunks e falas viram vetores de embedding.",
             "A pergunta tambem vira vetor; a busca usa similaridade coseno.",
             "RAG encontra passagens boas, mas nao sabe caminhos estruturais por si so.",
         ],
         "speakerNotes": [
-            "Aponte que o RAG e otimo para explicar narrativas e citar trechos.",
-            "Mostre que o score vetorial nao diz qual relacao existe no KG.",
+            "RAG e forte para explicar narrativas e citar trechos.",
+            "Score vetorial nao diz qual relacao existe no KG.",
         ],
         "quiz": {
             "question": "O que muda entre BM25 e embedding retrieval?",
@@ -333,15 +333,15 @@ LECTURE_STEPS = [
         "mode": "rag",
         "question": "Quem sao os conectores entre Frodo e Mordor?",
         "topK": 8,
-        "demoAction": "Mostre que a busca textual acha trechos, mas a nocao de conector fica espalhada e pouco auditavel.",
+        "demoAction": "A busca textual acha trechos, mas a nocao de conector fica espalhada e pouco auditavel.",
         "talkingPoints": [
             "Uma pergunta relacional pede entidades intermediarias, nao apenas trechos parecidos.",
             "RAG puro pode responder bem, mas e dificil auditar o caminho usado.",
             "Essa lacuna motiva abrir o grafo explicitamente.",
         ],
         "speakerNotes": [
-            "Nao venda RAG como ruim; venda como incompleto para perguntas estruturais.",
-            "Prepare a transicao para k-hop e caminhos.",
+            "RAG nao e ruim; ele e incompleto para perguntas explicitamente estruturais.",
+            "A lacuna estrutural aparece em k-hop, caminhos e pesos.",
         ],
         "quiz": {
             "question": "Que evidencia falta quando so temos chunks?",
@@ -357,15 +357,15 @@ LECTURE_STEPS = [
         "center": "Frodo",
         "hops": 2,
         "cypherExample": "frodo-sauron-path",
-        "demoAction": "Selecione Menor caminho Frodo-Sauron, rode Cypher e mostre a tabela junto com o subgrafo.",
+        "demoAction": "Menor caminho Frodo-Sauron combina tabela Cypher e subgrafo no mesmo workspace.",
         "talkingPoints": [
             "k-hop define o campo receptivo, como em message passing.",
             "PageRank e comunidades resumem posicao estrutural.",
             "O grafo explica conexoes, mas nao substitui a narrativa textual.",
         ],
         "speakerNotes": [
-            "Explique que cada query e uma pergunta operacional sobre a estrutura.",
-            "Mostre como trocar hops muda cobertura e ruido.",
+            "Cada query e uma pergunta operacional sobre a estrutura.",
+            "Trocar hops muda cobertura e ruido.",
         ],
         "quiz": {
             "question": "Por que aumentar hops pode piorar a resposta?",
@@ -381,15 +381,15 @@ LECTURE_STEPS = [
         "center": "Frodo",
         "hops": 1,
         "cypherExample": "frodo-neighbors",
-        "demoAction": "Comece em 1-hop, depois altere para 2 ou 3 hops para mostrar cobertura versus ruido.",
+        "demoAction": "A variacao 1-hop, 2-hop e 3-hop evidencia cobertura versus ruido.",
         "talkingPoints": [
             "Em uma GNN, cada camada agrega informacao de vizinhos.",
             "1-hop e preciso, mas limitado; 3-hop cobre mais, mas dilui o sinal.",
             "GraphRAG usa a mesma intuicao para decidir quais entidades ativam contexto textual.",
         ],
         "speakerNotes": [
-            "Use a palavra campo receptivo e conecte com CNNs se a turma conhecer.",
-            "Destaque que aqui nao estamos treinando uma GNN; estamos usando a intuicao estrutural dela.",
+            "Campo receptivo conecta a ideia de vizinhanca com arquiteturas neurais sobre grafos.",
+            "Aqui nao ha treino de GNN; ha uso explicito da intuicao estrutural dela.",
         ],
         "quiz": {
             "question": "Qual analogia direta entre k-hop e GNN?",
@@ -405,15 +405,15 @@ LECTURE_STEPS = [
         "center": "Frodo",
         "hops": 2,
         "topK": 8,
-        "demoAction": "Execute GraphRAG e leia a esteira: entidades, k-hop, vetores e resposta.",
+        "demoAction": "A esteira do GraphRAG exibe entidades, k-hop, vetores e resposta.",
         "talkingPoints": [
             "Primeiro detectamos entidades.",
             "Depois expandimos k-hop no grafo.",
             "Por fim, buscamos evidencias vetoriais com boost do subgrafo.",
         ],
         "speakerNotes": [
-            "A frase central: o grafo acha a estrutura; o texto explica a narrativa.",
-            "Mostre entidades detectadas e evidencias antes de ler a resposta.",
+            "O grafo acha a estrutura; o texto explica a narrativa.",
+            "Entidades detectadas e evidencias aparecem antes da resposta final.",
         ],
         "quiz": {
             "question": "Onde a ideia de GNN aparece no GraphRAG?",
@@ -429,42 +429,42 @@ LECTURE_STEPS = [
         "center": "Frodo",
         "hops": 2,
         "topK": 8,
-        "demoAction": "Rode Comparar Agora e leia cada coluna como uma tese diferente sobre recuperacao.",
+        "demoAction": "A comparacao lado a lado trata cada coluna como uma tese diferente sobre recuperacao.",
         "talkingPoints": [
             "RAG textual recupera narrativa.",
             "Graph recupera estrutura.",
             "GraphRAG combina as duas evidencias.",
         ],
         "speakerNotes": [
-            "A comparacao e o fechamento tecnico: nao e sobre vencer sempre, e sobre escolher retrieval para a pergunta.",
-            "Use a coluna GraphRAG para conectar a aula com o objetivo de GNN.",
+            "Comparacao tecnica nao e sobre vencer sempre; e sobre escolher retrieval para a pergunta.",
+            "GraphRAG conecta evidencia textual com propagacao estrutural.",
         ],
         "quiz": {
             "question": "Qual modo voce usaria para pergunta causal/narrativa com entidades conhecidas?",
-            "answer": "GraphRAG, porque usa o grafo para selecionar contexto e o texto para explicar.",
+            "answer": "GraphRAG, porque o grafo seleciona contexto e o texto sustenta a explicacao.",
         },
     },
     {
         "id": "closing",
-        "title": "Takeaways: quando usar cada abordagem",
+        "title": "Sintese: quando usar cada abordagem",
         "duration": "2 min",
         "mode": "compare",
         "question": "Qual a relacao de Frodo com Sauron?",
         "center": "Frodo",
         "hops": 2,
-        "demoAction": "Feche com a regra pratica: RAG para narrativa, Graph para estrutura, GraphRAG para perguntas relacionais com explicacao textual.",
+        "demoAction": "Regra pratica: RAG para narrativa, Graph para estrutura, GraphRAG para perguntas relacionais com explicacao textual.",
         "talkingPoints": [
             "RAG responde com texto, mas a estrutura fica implicita.",
             "Graph explica conexoes, mas pode faltar narrativa.",
             "GraphRAG e um compromisso auditavel para perguntas relacionais.",
         ],
         "speakerNotes": [
-            "Termine lembrando que o mesmo padrao vale fora de LOTR: biomedicina, juridico, empresas e ciencia.",
-            "Convide a turma a pensar qual seria o grafo do proprio dominio.",
+            "O mesmo padrao vale fora de LOTR: biomedicina, juridico, empresas e ciencia.",
+            "Cada dominio pode projetar seu proprio grafo de entidades, relacoes e evidencias.",
         ],
         "quiz": {
             "question": "Qual e a regra de bolso final?",
-            "answer": "Use o grafo para orientar o que procurar e use o texto para explicar com evidencia.",
+            "answer": "O grafo orienta o que procurar; o texto explica com evidencia.",
         },
     },
 ]
@@ -548,20 +548,29 @@ def vector_search(payload: VectorSearchRequest) -> dict[str, Any]:
             for node in graph.get("nodes", [])
             if node.get("name") and node.get("name") not in entities
         ]
-        docs = VectorStore().search(
-            payload.question,
-            OllamaClient(),
-            model=settings.ollama_embed_model,
-            limit=payload.top_k,
-            seed_entities=entities,
-            graph_entities=graph_names,
-            source_type=payload.source_type,
-        )
+        if payload.source_type:
+            docs = VectorStore().search(
+                payload.question,
+                OllamaClient(),
+                model=settings.ollama_embed_model,
+                limit=payload.top_k,
+                seed_entities=entities if payload.mode == "hybrid" else [],
+                graph_entities=graph_names if payload.mode == "hybrid" else [],
+                source_type=payload.source_type,
+                apply_boost=payload.mode == "hybrid",
+            )
+            for idx, doc in enumerate(docs, start=1):
+                doc["sourceRank"] = idx
+                doc["sourceBucket"] = doc.get("sourceType") or "other"
+        else:
+            docs = rag.retrieve_text(payload.question, entities, graph, payload.mode, limit=payload.top_k)
         return {
             "question": payload.question,
             "entities": entities,
             "graphEntities": graph_names,
             "documents": docs,
+            "documentsBySource": rag.documents_by_source(docs),
+            "retrieval": rag.retrieval_summary(docs),
             "embeddingModel": settings.ollama_embed_model,
         }
     except FileNotFoundError as exc:

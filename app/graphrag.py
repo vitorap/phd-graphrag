@@ -36,7 +36,9 @@ class GraphRAG:
         entities = self.resolve_entities(question)
         graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180) if mode in {"graph", "hybrid"} else {}
         documents = self.retrieve_text(question, entities, graph, mode, limit=top_k) if mode in {"rag", "hybrid"} else []
-        context = self.build_context(question, entities, graph, documents, hops=hops, mode=mode)
+        context_sections = self.build_context_sections(question, entities, graph, documents, hops=hops, mode=mode)
+        context = context_sections["selected"]
+        documents_by_source = self.documents_by_source(documents)
 
         if not use_llm:
             answer = self.extractive_answer(question, entities, graph, documents, mode, llm_error=None)
@@ -45,14 +47,19 @@ class GraphRAG:
                 "entities": entities,
                 "hops": hops,
                 "topK": top_k,
+                "topKPerSource": top_k if mode == "rag" else None,
                 "mode": mode,
                 "context": context,
+                "textContext": context_sections["text"],
+                "graphContext": context_sections["graph"],
+                "hybridContext": context_sections["hybrid"],
                 "answer": answer,
                 "graph": graph,
                 "documents": documents,
+                "documentsBySource": documents_by_source,
                 "retrieval": self.retrieval_summary(documents),
                 "model": model or self.ollama.model,
-                "llmStatus": "disabled",
+                "llmStatus": "retrieval-only",
             }
 
         try:
@@ -68,7 +75,7 @@ class GraphRAG:
                 )
                 status = "fallback: resposta vazia do Ollama"
             else:
-                status = "ok"
+                status = "retrieval+ollama"
         except Exception as exc:
             answer = self.extractive_answer(question, entities, graph, documents, mode, llm_error=str(exc))
             status = f"fallback: {exc}"
@@ -78,11 +85,16 @@ class GraphRAG:
             "entities": entities,
             "hops": hops,
             "topK": top_k,
+            "topKPerSource": top_k if mode == "rag" else None,
             "mode": mode,
             "context": context,
+            "textContext": context_sections["text"],
+            "graphContext": context_sections["graph"],
+            "hybridContext": context_sections["hybrid"],
             "answer": answer,
             "graph": graph,
             "documents": documents,
+            "documentsBySource": documents_by_source,
             "retrieval": self.retrieval_summary(documents),
             "model": model or self.ollama.model,
             "llmStatus": status,
@@ -118,12 +130,26 @@ class GraphRAG:
     @staticmethod
     def retrieval_summary(documents: list[dict[str, Any]]) -> dict[str, Any]:
         methods = sorted({doc.get("retrievalMethod") or "unknown" for doc in documents})
+        by_source = Counter(doc.get("sourceType") or "other" for doc in documents)
+        has_boost = any(float(doc.get("graphBoost") or 0.0) > 0 for doc in documents)
+        has_vector = any(doc.get("vectorScore") is not None for doc in documents)
         return {
-            "method": methods[0] if len(methods) == 1 else "+".join(methods),
+            "method": methods[0] if len(methods) == 1 else ("+".join(methods) if methods else "none"),
             "documents": len(documents),
+            "bySource": dict(sorted(by_source.items())),
+            "scoreMode": "cosine+graph-boost" if has_boost else ("cosine" if has_vector else ("bm25" if documents else "none")),
             "topScore": float(documents[0].get("score") or 0.0) if documents else 0.0,
             "topVectorScore": documents[0].get("vectorScore") if documents else None,
         }
+
+    @staticmethod
+    def documents_by_source(documents: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        grouped: dict[str, list[dict[str, Any]]] = {"book": [], "dialogue": [], "other": []}
+        for doc in documents:
+            source_type = doc.get("sourceType") or "other"
+            key = source_type if source_type in grouped else "other"
+            grouped[key].append(doc)
+        return {key: value for key, value in grouped.items() if value}
 
     def resolve_entities(self, question: str, limit: int = 4) -> list[str]:
         question_norm = f" {normalize(question)} "
@@ -166,28 +192,89 @@ class GraphRAG:
         hops: int,
         mode: str,
     ) -> str:
+        return self.build_context_sections(question, entities, graph, documents, hops, mode)["selected"]
+
+    def build_context_sections(
+        self,
+        question: str,
+        entities: list[str],
+        graph: dict[str, Any],
+        documents: list[dict[str, Any]],
+        hops: int,
+        mode: str,
+    ) -> dict[str, str]:
+        text_context = self.build_text_context(question, documents, mode=mode) if mode in {"rag", "hybrid"} else ""
+        graph_context = self.build_graph_context(question, entities, graph, hops=hops) if mode in {"graph", "hybrid"} else ""
+        hybrid_context = self.build_hybrid_context(question, text_context, graph_context) if mode == "hybrid" else ""
+        selected = {
+            "rag": text_context,
+            "graph": graph_context,
+            "hybrid": hybrid_context,
+        }.get(mode, graph_context)
+        return {
+            "selected": selected,
+            "text": text_context,
+            "graph": graph_context,
+            "hybrid": hybrid_context,
+        }
+
+    def build_text_context(self, question: str, documents: list[dict[str, Any]], mode: str) -> str:
         lines: list[str] = []
         lines.append(f"Pergunta: {question}")
-        lines.append(f"Modo de retrieval: {mode}")
+        if mode == "rag":
+            lines.append("Modo de retrieval: rag textual puro")
+            lines.append("Score: similaridade textual apenas.")
+        elif mode == "hybrid":
+            lines.append("Modo de retrieval: texto para GraphRAG")
+            lines.append("Score: similaridade textual com reforco de entidades ativadas pelo subgrafo.")
+        else:
+            lines.append("Modo de retrieval: texto")
+
+        if not documents:
+            lines.append("")
+            lines.append("Nenhuma evidencia textual especifica foi recuperada.")
+            return "\n".join(lines)
+
+        grouped = self.documents_by_source(documents)
+        for source_type, label in [("book", "Chunks dos livros"), ("dialogue", "Falas dos scripts"), ("other", "Outras evidencias")]:
+            bucket = grouped.get(source_type) or []
+            if not bucket:
+                continue
+            lines.append("")
+            lines.append(f"{label}:")
+            for idx, doc in enumerate(bucket, start=1):
+                mentions = ", ".join(doc.get("mentions") or [])
+                source = doc.get("sourceTitle") or doc.get("sourceType") or "texto"
+                chapter = f" / {doc['chapterTitle']}" if doc.get("chapterTitle") else ""
+                speaker = f" / fala de {doc['speaker']}" if doc.get("speaker") else ""
+                score = float(doc.get("score") or 0.0)
+                method = doc.get("retrievalMethod") or "retrieval"
+                vector = doc.get("vectorScore")
+                vector_text = f"; cosine={float(vector):.3f}" if vector is not None else ""
+                boost = float(doc.get("graphBoost") or 0.0)
+                boost_text = f"; boost={boost:.3f}" if boost else ""
+                lines.append(
+                    f"- #{idx} [{source}{chapter}{speaker}; metodo={method}; score={score:.3f}{vector_text}{boost_text}; mencoes={mentions}]"
+                )
+                lines.append(f"  {doc.get('snippet') or doc.get('text') or ''}")
+        return "\n".join(lines)
+
+    def build_graph_context(
+        self,
+        question: str,
+        entities: list[str],
+        graph: dict[str, Any],
+        hops: int,
+    ) -> str:
+        lines: list[str] = []
+        lines.append(f"Pergunta: {question}")
+        lines.append("Modo de retrieval: graph estrutural")
         lines.append(f"Profundidade k-hop: {hops}")
 
         if entities:
             lines.append("Entidades detectadas: " + ", ".join(entities))
         else:
-            fallback = self.neo4j.top_characters(limit=8)
-            entities = [row["name"] for row in fallback]
-            lines.append("Entidades detectadas: nenhuma; usando personagens centrais como contexto global.")
-
-        lines.append("")
-        lines.append("Perfis dos personagens centrais:")
-        for name in entities[:4]:
-            neighbors = self.neo4j.top_neighbors(name, limit=8)
-            if neighbors:
-                neighbor_text = "; ".join(
-                    f"{row['name']} ({row['relation']}, peso={row['weight']})"
-                    for row in neighbors
-                )
-                lines.append(f"- {name}: vizinhos principais: {neighbor_text}")
+            lines.append("Entidades detectadas: nenhuma.")
 
         if len(entities) >= 2:
             lines.append("")
@@ -215,31 +302,25 @@ class GraphRAG:
                     f"- {edge['sourceName']} -[{edge['type']}, peso={weight}{method}, fonte={dataset}]-> {edge['targetName']}"
                 )
 
-        if documents:
-            lines.append("")
-            lines.append("Evidencias textuais recuperadas:")
-            for doc in documents[:8]:
-                mentions = ", ".join(doc.get("mentions") or [])
-                source = doc.get("sourceTitle") or doc.get("sourceType") or "texto"
-                chapter = f" / {doc['chapterTitle']}" if doc.get("chapterTitle") else ""
-                speaker = f" / fala de {doc['speaker']}" if doc.get("speaker") else ""
-                score = float(doc.get("score") or 0.0)
-                method = doc.get("retrievalMethod") or "retrieval"
-                vector = doc.get("vectorScore")
-                vector_text = f"; cosine={float(vector):.3f}" if vector is not None else ""
-                lines.append(
-                    f"- [{source}{chapter}{speaker}; metodo={method}; score={score:.2f}{vector_text}; mencoes={mentions}]"
-                )
-                lines.append(f"  {doc.get('snippet') or doc.get('text') or ''}")
-
-        if not graph.get("edges") and mode in {"graph", "hybrid"}:
+        if not graph.get("edges"):
             lines.append("")
             lines.append("Nenhum subgrafo especifico foi recuperado. Responda apenas com a incerteza apropriada.")
-        if not documents and mode in {"rag", "hybrid"}:
-            lines.append("")
-            lines.append("Nenhuma evidencia textual especifica foi recuperada.")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def build_hybrid_context(question: str, text_context: str, graph_context: str) -> str:
+        return "\n\n".join(
+            [
+                f"Pergunta: {question}",
+                "Modo de retrieval: GraphRAG hibrido",
+                "A evidencia estrutural identifica entidades, caminhos e vizinhos; a evidencia textual sustenta a resposta.",
+                "=== Evidencia estrutural ===",
+                graph_context,
+                "=== Evidencia textual ===",
+                text_context,
+            ]
+        )
 
     @staticmethod
     def messages(question: str, context: str) -> list[dict[str, str]]:
@@ -269,6 +350,42 @@ class GraphRAG:
         mode: str,
         limit: int = 8,
     ) -> list[dict[str, Any]]:
+        if mode == "rag":
+            documents: list[dict[str, Any]] = []
+            for source_type in ["book", "dialogue"]:
+                documents.extend(
+                    self.retrieve_text_ranked(
+                        question,
+                        entities=[],
+                        graph=graph,
+                        mode=mode,
+                        limit=limit,
+                        source_type=source_type,
+                        apply_boost=False,
+                    )
+                )
+            return documents
+
+        return self.retrieve_text_ranked(
+            question,
+            entities=entities,
+            graph=graph,
+            mode=mode,
+            limit=limit,
+            source_type=None,
+            apply_boost=mode == "hybrid",
+        )
+
+    def retrieve_text_ranked(
+        self,
+        question: str,
+        entities: list[str],
+        graph: dict[str, Any],
+        mode: str,
+        limit: int = 8,
+        source_type: str | None = None,
+        apply_boost: bool = False,
+    ) -> list[dict[str, Any]]:
         graph_names = {
             node["name"]
             for node in graph.get("nodes", [])
@@ -276,21 +393,43 @@ class GraphRAG:
         }
         if self.vector_store.exists():
             try:
-                return self.vector_store.search(
+                results = self.vector_store.search(
                     question,
                     self.ollama,
                     model=settings.ollama_embed_model,
                     limit=limit,
                     seed_entities=entities,
-                    graph_entities=sorted(graph_names) if mode == "hybrid" else [],
+                    graph_entities=sorted(graph_names) if apply_boost else [],
+                    source_type=source_type,
+                    apply_boost=apply_boost,
                 )
+                for idx, doc in enumerate(results, start=1):
+                    doc["sourceRank"] = idx
+                    doc["sourceBucket"] = doc.get("sourceType") or "other"
+                return results
             except Exception as exc:
-                fallback = self.retrieve_text_bm25(question, entities, graph, mode, limit)
+                fallback = self.retrieve_text_bm25(
+                    question,
+                    entities,
+                    graph,
+                    mode,
+                    limit,
+                    source_type=source_type,
+                    apply_boost=apply_boost,
+                )
                 for doc in fallback:
                     doc["retrievalMethod"] = "bm25_fallback"
                     doc["retrievalError"] = str(exc)
                 return fallback
-        return self.retrieve_text_bm25(question, entities, graph, mode, limit)
+        return self.retrieve_text_bm25(
+            question,
+            entities,
+            graph,
+            mode,
+            limit,
+            source_type=source_type,
+            apply_boost=apply_boost,
+        )
 
     def retrieve_text_bm25(
         self,
@@ -299,8 +438,14 @@ class GraphRAG:
         graph: dict[str, Any],
         mode: str,
         limit: int = 8,
+        source_type: str | None = None,
+        apply_boost: bool = False,
     ) -> list[dict[str, Any]]:
         docs = self.neo4j.retrieval_documents()
+        if not docs:
+            return []
+        if source_type:
+            docs = [doc for doc in docs if doc.get("sourceType") == source_type]
         if not docs:
             return []
 
@@ -314,7 +459,7 @@ class GraphRAG:
             if node.get("name") and node.get("name") not in entities
         }
         seed_set = set(entities)
-        graph_set = graph_names if mode == "hybrid" else set()
+        graph_set = graph_names if apply_boost else set()
 
         tokenized_docs = [tokenize(str(doc.get("text") or "")) for doc in docs]
         doc_freq: Counter[str] = Counter()
@@ -341,11 +486,10 @@ class GraphRAG:
             mentions = set(doc.get("mentions") or [])
             seed_hits = mentions & seed_set
             graph_hits = mentions & graph_set
-            score += len(seed_hits) * 1.65
-            score += min(len(graph_hits), 6) * 0.18
-            if doc.get("sourceType") == "book":
-                score += 0.2
-            if len(seed_hits) >= 2:
+            if apply_boost:
+                score += len(seed_hits) * 1.65
+                score += min(len(graph_hits), 6) * 0.18
+            if apply_boost and len(seed_hits) >= 2:
                 score += 1.5
 
             if score <= 0:
@@ -359,7 +503,11 @@ class GraphRAG:
             scored.append(enriched)
 
         scored.sort(key=lambda item: item["score"], reverse=True)
-        return scored[:limit]
+        results = scored[:limit]
+        for idx, doc in enumerate(results, start=1):
+            doc["sourceRank"] = idx
+            doc["sourceBucket"] = doc.get("sourceType") or "other"
+        return results
 
     def extractive_answer(
         self,
@@ -374,6 +522,12 @@ class GraphRAG:
         if llm_error:
             prefix = f"O Ollama nao respondeu ({llm_error}). "
         if not entities:
+            if mode == "rag":
+                evidence_text = self.text_evidence_summary(documents)
+                return (
+                    f"{prefix}Modo `rag`: nao detectei entidades nomeadas na pergunta, entao a resposta fica baseada "
+                    "apenas nas evidencias textuais recuperadas por similaridade. " + (evidence_text or "")
+                ).strip()
             return (
                 f"{prefix}Nao detectei uma entidade especifica na pergunta. Use o grafo global, PageRank e "
                 "comunidades para escolher pontos de entrada e depois reduza para uma vizinhanca k-hop."

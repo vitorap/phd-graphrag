@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-typography" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-pure-rag" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -64,7 +64,6 @@
           </div>
           <div>
             <h1>GraphRAG em Middle-earth</h1>
-            <p>Neo4j + embeddings Ollama + livros/scripts LOTR + aula interativa</p>
           </div>
         </div>
         <nav class="view-tabs" aria-label="Navegacao principal">
@@ -73,7 +72,7 @@
           <button class="tab-button" data-view="graph" type="button"><svg><use href="#icon-network"></use></svg><span>Graph</span></button>
           <button class="tab-button" data-view="graphrag" type="button"><svg><use href="#icon-star-network"></use></svg><span>GraphRAG</span></button>
           <button class="tab-button" data-view="compare" type="button"><svg><use href="#icon-scales"></use></svg><span>Compare</span></button>
-          <button class="tab-button" data-view="lecture" type="button"><svg><use href="#icon-book"></use></svg><span>Lecture</span></button>
+          <button class="tab-button" data-view="lecture" type="button"><svg><use href="#icon-book"></use></svg><span>Flow</span></button>
         </nav>
       </header>
 
@@ -86,12 +85,12 @@
       <section class="workspace" id="workspaceShell" data-view="overview">
         <aside class="control-panel">
           <div class="control-heading">
-            <p id="controlKicker">Demo</p>
-            <h2 id="controlTitle">Comece pela visao geral</h2>
-            <p id="controlHint">Escolha um modo para configurar somente o que importa naquela etapa.</p>
+            <p id="controlKicker">Explorer</p>
+            <h2 id="controlTitle">Modos de Recuperacao</h2>
+            <p id="controlHint">Escolha a estrategia para analisar entidades, texto e estrutura do corpus.</p>
           </div>
 
-          <section class="control-block overview-controls" aria-label="Atalhos da demo">
+          <section class="control-block overview-controls" aria-label="Modos de recuperacao">
             <button class="demo-jump" data-demo-mode="rag" data-demo-question="Por que o Anel importa para Frodo?" data-demo-view="rag" type="button">
               <strong>1. RAG</strong>
               <span>texto primeiro, sem estrutura explicita</span>
@@ -147,7 +146,7 @@
             <button id="graphButton" class="secondary-button wide-button" type="button">Atualizar Grafo</button>
           </section>
 
-          <section class="control-block model-controls" aria-label="Modelo local">
+          <section class="control-block model-controls" aria-label="Sintese local">
             <label class="field">
               <span>Modelo LLM</span>
               <select id="modelInput">
@@ -156,8 +155,9 @@
             </label>
             <label class="toggle-field">
               <input id="llmInput" type="checkbox" />
-              <span>LLM local</span>
+              <span>Sintese com LLM</span>
             </label>
+            <p class="control-note">Desligado: retrieval-only. Ligado: Ollama sintetiza as evidencias recuperadas.</p>
           </section>
 
           <section class="control-block run-controls" aria-label="Acoes">
@@ -165,8 +165,7 @@
             <button id="compareButton" class="primary-button action-compare" type="button">Comparar modos</button>
           </section>
 
-          <section class="control-block lecture-controls" aria-label="Controles da aula">
-            <p class="control-note">Use esta tela como roteiro. O botao de aplicar passo troca a pergunta e abre a view correta.</p>
+          <section class="control-block lecture-controls" aria-label="Navegacao do fluxo">
             <div class="button-row">
               <button class="secondary-button" id="prevLectureButton" type="button">Voltar</button>
               <button class="primary-button" id="nextLectureButton" type="button">Avancar</button>
@@ -196,14 +195,14 @@
             <div class="view-head">
               <div>
                 <h2>Visao Geral</h2>
-                <p>Comece aqui: corpus, grafo, vetores, modelos e perguntas fortes para a aula.</p>
+                <p>Corpus, grafo, vetores, modelos e perguntas iniciais em uma unica superficie.</p>
               </div>
               <a class="ghost-link" href="http://localhost:7474" target="_blank" rel="noreferrer">Abrir Neo4j Browser</a>
             </div>
 
             <div class="overview-grid">
               <article class="panel-card">
-                <h3>Pipeline da Demo</h3>
+                <h3>Pipeline de Recuperacao</h3>
                 <ol class="pipeline-list">
                   <li><strong>RAG</strong><span>pergunta vira embedding e busca chunks/falas por similaridade.</span></li>
                   <li><strong>Graph</strong><span>entidades viram vizinhanca k-hop, caminhos e centralidade.</span></li>
@@ -223,7 +222,7 @@
 
               <article class="panel-card">
                 <h3>Neo4j</h3>
-                <p class="muted">Use no Browser: usuario <code>neo4j</code>, senha <code>graphrag-lotr</code>.</p>
+                <p class="muted">Neo4j Browser: usuario <code>neo4j</code>, senha <code>graphrag-lotr</code>.</p>
                 <button class="secondary-button wide-button" id="copyStarterCypher" type="button">Copiar Cypher inicial</button>
               </article>
             </div>
@@ -239,9 +238,9 @@
             </div>
             <div class="method-strip">
               <span>Pergunta -> embedding</span>
-              <span>cosine similarity</span>
-              <span>top-k chunks/falas</span>
-              <span>resposta</span>
+              <span>cosine puro</span>
+              <span>top-k livros + scripts</span>
+              <span>sintese opcional</span>
             </div>
             <div id="ragEvidence" class="evidence-cards"></div>
           </section>
@@ -249,7 +248,7 @@
           <section class="view" id="view-graph">
             <div class="view-head">
               <div>
-                <h2>Graph Playground</h2>
+                <h2>Graph Workbench</h2>
                 <p>Cypher read-only, caminhos, vizinhos, PageRank e comunidades.</p>
               </div>
               <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
@@ -262,15 +261,15 @@
                 </div>
                 <span id="graphLessonVisual" class="lesson-visual">visualizacao livre</span>
               </div>
-              <p id="graphLessonText">Selecione uma consulta para ver a leitura didatica e atualizar o grafo automaticamente.</p>
+              <p id="graphLessonText">Consultas estruturais atualizam a tabela e o subgrafo recuperado.</p>
               <div class="lesson-grid">
                 <article>
                   <strong>GNN</strong>
                   <span id="graphLessonGnn">O link com message passing aparece aqui.</span>
                 </article>
                 <article>
-                  <strong>Como apresentar</strong>
-                  <span id="graphLessonCaption">A tabela e o grafo devem ser lidos juntos.</span>
+                  <strong>Leitura</strong>
+                  <span id="graphLessonCaption">Tabela e grafo compartilham a mesma selecao estrutural.</span>
                 </article>
               </div>
             </article>
@@ -323,8 +322,8 @@
           <section class="view" id="view-lecture">
             <div class="view-head">
               <div>
-                <h2>Lecture Mode</h2>
-                <p>Roteiro interativo de 40 minutos com parametros e quizzes locais.</p>
+                <h2>Exploracao Guiada</h2>
+                <p>Sequencia operacional para percorrer corpus, RAG, grafo, GraphRAG e comparacao.</p>
               </div>
               <div class="button-row">
                 <button class="secondary-button lecture-nav-button" type="button" data-lecture-nav="prev">Voltar</button>
@@ -342,11 +341,11 @@
                 </div>
                 <ul id="lecturePoints"></ul>
                 <div class="lecture-demo">
-                  <strong>Demo ao vivo</strong>
+                  <strong>Interacao</strong>
                   <p id="lectureDemoAction">-</p>
                 </div>
                 <details class="lecture-notes" open>
-                  <summary>Notas para falar</summary>
+                  <summary>Insights</summary>
                   <ul id="lectureSpeakerNotes"></ul>
                 </details>
                 <div class="quiz-box">
@@ -355,7 +354,7 @@
                   <button class="secondary-button" id="revealQuizButton" type="button">Revelar resposta</button>
                   <p id="quizAnswer" class="quiz-answer"></p>
                 </div>
-                <button class="primary-button wide-button" id="applyLectureButton" type="button">Aplicar passo no playground</button>
+                <button class="primary-button wide-button" id="applyLectureButton" type="button">Aplicar no workspace</button>
               </article>
             </div>
           </section>
@@ -392,6 +391,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-graph-lecture"></script>
+    <script src="/static/app.js?v=20260525-pure-rag"></script>
   </body>
 </html>

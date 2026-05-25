@@ -96,34 +96,34 @@ const PROMPTS = [
 
 const CONTROL_CONTEXT = {
   overview: {
-    kicker: "Demo",
-    title: "Escolha a trilha",
-    hint: "Abertura da aula: use os atalhos para entrar no modo certo sem carregar controles tecnicos demais.",
+    kicker: "Explorer",
+    title: "Modos de Recuperacao",
+    hint: "Selecione a estrategia para analisar entidades, texto e estrutura do corpus.",
   },
   rag: {
     kicker: "RAG",
     title: "Busca textual",
-    hint: "Ajuste pergunta, top-k e modelo. Aqui a estrutura do grafo sai de cena para o texto aparecer.",
+    hint: "A pergunta vira embedding e recupera evidencias textuais por similaridade.",
   },
   graph: {
     kicker: "Graph",
     title: "Laboratorio Cypher",
-    hint: "Controle centro e saltos do subgrafo enquanto explora queries estruturais.",
+    hint: "Centro, saltos e consultas definem a vizinhanca estrutural em foco.",
   },
   graphrag: {
     kicker: "GraphRAG",
     title: "Texto guiado por grafo",
-    hint: "Combine pergunta, k-hop e top-k para mostrar como o grafo reforca a recuperacao textual.",
+    hint: "Entidades ativam subgrafos; subgrafos reforcam a recuperacao textual.",
   },
   compare: {
     kicker: "Compare",
     title: "Mesma pergunta, tres metodos",
-    hint: "Rode os tres modos lado a lado. O painel mostra so os parametros que afetam a comparacao.",
+    hint: "RAG, Graph e GraphRAG retornam evidencias complementares para a mesma pergunta.",
   },
   lecture: {
-    kicker: "Lecture",
-    title: "Roteiro da aula",
-    hint: "Avance pelos passos, revele quizzes e aplique cada etapa no playground.",
+    kicker: "Flow",
+    title: "Exploracao Guiada",
+    hint: "Uma sequencia compacta para percorrer corpus, RAG, grafo, GraphRAG e comparacao.",
   },
 };
 
@@ -175,15 +175,16 @@ function resetPipelinePlaceholder() {
 
 function renderComparePlaceholder() {
   compareResults.innerHTML = `
-    <article class="compare-placeholder">RAG vai mostrar evidencias textuais recuperadas por embedding.</article>
-    <article class="compare-placeholder">Graph vai mostrar caminhos, vizinhos e relacoes estruturais.</article>
-    <article class="compare-placeholder">GraphRAG vai combinar a estrutura com os chunks recuperados.</article>
+    <article class="compare-placeholder">RAG textual: cosine puro sobre livros e scripts.</article>
+    <article class="compare-placeholder">Graph estrutural: caminhos, vizinhos e relacoes, sem chunks.</article>
+    <article class="compare-placeholder">GraphRAG: subgrafo + evidencias textuais com boost.</article>
   `;
 }
 
 function updateViewPlaceholders(name) {
   if (name === "rag" && state.lastAnswerMode !== "rag") {
-    setAnswerPlaceholder("RAG aguardando execucao", "Rode a busca para ver resposta, chunks recuperados e contexto textual.");
+    setAnswerPlaceholder("RAG aguardando execucao", "A busca preenche resposta, chunks recuperados e contexto textual.");
+    ragEvidence.className = "rag-evidence-groups";
     ragEvidence.innerHTML = `<article class="evidence-card"><h3>Aguardando busca</h3><p>Os chunks e falas recuperados aparecem aqui depois da execucao vetorial.</p></article>`;
   }
   if (name === "graphrag" && state.lastAnswerMode !== "hybrid") {
@@ -374,7 +375,7 @@ function renderGraph(graph) {
   setGraphViewBox(width, height);
 
   if (nodes.length === 0) {
-    graphMeta.textContent = "Grafo vazio. Rode make seed.";
+    graphMeta.textContent = "Grafo vazio. Banco sem dados carregados.";
     return;
   }
 
@@ -481,6 +482,29 @@ function payload(modeOverride) {
   };
 }
 
+function sourceLabel(sourceType) {
+  if (sourceType === "book") return "Livro";
+  if (sourceType === "dialogue") return "Script";
+  return "Texto";
+}
+
+function scoreLabel(doc) {
+  const vector = doc.vectorScore;
+  const score = Number(doc.score || 0);
+  const boost = Number(doc.graphBoost || 0);
+  const base = vector == null ? `score ${score.toFixed(3)}` : `cosine ${Number(vector).toFixed(3)}`;
+  return boost > 0 ? `${base} · boost ${boost.toFixed(3)} · final ${score.toFixed(3)}` : base;
+}
+
+function groupDocumentsBySource(documents) {
+  return (documents || []).reduce((groups, doc) => {
+    const key = doc.sourceType || "other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(doc);
+    return groups;
+  }, {});
+}
+
 function renderEvidenceCards(documents, target = ragEvidence) {
   target.innerHTML = "";
   if (!documents || !documents.length) {
@@ -489,15 +513,17 @@ function renderEvidenceCards(documents, target = ragEvidence) {
   }
   for (const doc of documents) {
     const card = document.createElement("article");
-    card.className = "evidence-card";
+    card.className = `evidence-card source-${doc.sourceType || "other"}`;
     const source = doc.sourceTitle || doc.sourceType || "texto";
     const chapter = doc.chapterTitle ? ` / ${doc.chapterTitle}` : "";
     const speaker = doc.speaker ? ` / ${doc.speaker}` : "";
-    const vector = doc.vectorScore == null ? "" : ` · cosine ${Number(doc.vectorScore).toFixed(3)}`;
-    const boost = doc.graphBoost ? ` · boost ${Number(doc.graphBoost).toFixed(3)}` : "";
     const mentions = (doc.mentions || []).slice(0, 8).join(", ");
+    const rank = doc.sourceRank ? `#${doc.sourceRank}` : "";
     card.innerHTML = `
-      <div class="card-kicker">${escapeHtml(doc.retrievalMethod || "retrieval")} · score ${Number(doc.score || 0).toFixed(3)}${vector}${boost}</div>
+      <div class="evidence-top">
+        <span class="source-badge">${escapeHtml(sourceLabel(doc.sourceType))}${rank ? ` ${rank}` : ""}</span>
+        <span class="card-kicker">${escapeHtml(doc.retrievalMethod || "retrieval")} · ${escapeHtml(scoreLabel(doc))}</span>
+      </div>
       <h3>${escapeHtml(source + chapter + speaker)}</h3>
       <p>${escapeHtml(doc.snippet || doc.text || "").slice(0, 720)}</p>
       <small>${mentions ? `mencoes: ${escapeHtml(mentions)}` : "sem mencoes detectadas"}</small>
@@ -506,11 +532,56 @@ function renderEvidenceCards(documents, target = ragEvidence) {
   }
 }
 
+function renderRagEvidence(result) {
+  const bySource = result.documentsBySource || groupDocumentsBySource(result.documents || []);
+  const groups = [
+    ["book", "Livros"],
+    ["dialogue", "Scripts"],
+  ];
+  ragEvidence.className = "rag-evidence-groups";
+  ragEvidence.innerHTML = "";
+  let rendered = 0;
+  for (const [sourceType, title] of groups) {
+    const docs = bySource[sourceType] || [];
+    if (!docs.length) continue;
+    rendered += docs.length;
+    const section = document.createElement("section");
+    section.className = "rag-source-group";
+    const grid = document.createElement("div");
+    grid.className = "evidence-cards";
+    section.innerHTML = `
+      <div class="source-group-head">
+        <h3>${escapeHtml(title)}</h3>
+        <span>${docs.length} de top-k ${result.topKPerSource || result.topK || topKInput.value}</span>
+      </div>
+    `;
+    section.appendChild(grid);
+    ragEvidence.appendChild(section);
+    renderEvidenceCards(docs, grid);
+  }
+  if (!rendered) {
+    ragEvidence.innerHTML = `<article class="evidence-card"><h3>Nenhuma evidencia textual</h3><p>Ajuste a pergunta ou gere o indice com make vectors.</p></article>`;
+  }
+}
+
+function answerMetaText(result, fallbackTopK) {
+  const mode = result.mode || "retrieval";
+  if (mode === "graph") {
+    const graph = result.graph || {};
+    return `graph · subgrafo · ${graph.nodes?.length || 0} nos / ${graph.edges?.length || 0} arestas`;
+  }
+  const scoreMode = result.retrieval?.scoreMode || "score";
+  const topK = result.topKPerSource
+    ? `top-k ${result.topKPerSource} por fonte`
+    : `top-k ${result.topK || fallbackTopK}`;
+  return `${mode} · ${scoreMode} · ${topK}`;
+}
+
 async function askQuestion(modeOverride = null) {
   const requestedMode = modeOverride || modeInput.value;
   answerBox.textContent = "";
   contextBox.textContent = "";
-  llmStatus.textContent = llmInput.checked ? "Ollama local gerando resposta..." : "Recuperando contexto...";
+  llmStatus.textContent = llmInput.checked ? "Ollama sintetizando evidencias..." : "Retrieval-only: sem sintese com LLM";
   answerMeta.textContent = "Executando retrieval...";
   askButton.disabled = true;
   try {
@@ -524,9 +595,9 @@ async function askQuestion(modeOverride = null) {
     setTags(result.entities || []);
     answerBox.innerHTML = renderAnswer(result.answer || "");
     contextBox.textContent = result.context || "";
-    answerMeta.textContent = `${result.mode} · ${result.retrieval?.method || "sem texto"} · top-k ${result.topK || topKInput.value}`;
+    answerMeta.textContent = answerMetaText(result, topKInput.value);
     llmStatus.textContent = `${result.model} · ${result.llmStatus}`;
-    if ((result.mode || requestedMode) === "rag" && result.documents) renderEvidenceCards(result.documents, ragEvidence);
+    if ((result.mode || requestedMode) === "rag") renderRagEvidence(result);
     if (result.graph && result.graph.nodes) renderGraph(result.graph);
     updatePipeline(result);
     return result;
@@ -542,7 +613,7 @@ async function askQuestion(modeOverride = null) {
 async function compareQuestion() {
   compareResults.innerHTML = "";
   answerMeta.textContent = "Comparando RAG, Graph e GraphRAG...";
-  llmStatus.textContent = llmInput.checked ? "Comparando com Ollama local..." : "Comparando sem LLM local...";
+  llmStatus.textContent = llmInput.checked ? "Comparando com sintese Ollama..." : "Comparando em retrieval-only...";
   compareButton.disabled = true;
   compareViewButton.disabled = true;
   try {
@@ -576,9 +647,9 @@ function renderCompare(results) {
     hybrid: "GraphRAG",
   };
   const limits = {
-    rag: "Forte para narrativa textual; fraco para explicar caminhos estruturais.",
-    graph: "Forte para conexoes, centralidade e k-hop; fraco para detalhes narrativos.",
-    hybrid: "Combina estrutura e texto: melhor para perguntas com entidades e relacoes.",
+    rag: "Texto puro: ranking por similaridade sobre livros e scripts.",
+    graph: "Graph-only: subgrafo, caminhos e centralidade; zero chunks recuperados.",
+    hybrid: "Hibrido: subgrafo ativa entidades e reforca evidencias textuais.",
   };
   const badges = {
     rag: "texto",
@@ -595,13 +666,18 @@ function renderCompare(results) {
     const graph = result.graph || {};
     const entities = (result.entities || []).slice(0, 5).join(", ") || "sem entidades";
     const method = result.retrieval?.method || (mode === "graph" ? "subgrafo" : "retrieval");
+    const counts = result.retrieval?.bySource || {};
+    const sourceText = mode === "rag"
+      ? ` · livros ${counts.book || 0} / scripts ${counts.dialogue || 0}`
+      : "";
+    const scoreText = result.retrieval?.scoreMode ? ` · ${result.retrieval.scoreMode}` : "";
     const graphMetaText = graph.nodes ? ` · ${graph.nodes.length} nos / ${graph.edges?.length || 0} arestas` : "";
     const evidence = docs
       .slice(0, 3)
       .map((doc) => {
         const source = doc.sourceTitle || doc.sourceType || "texto";
         const chapter = doc.chapterTitle ? ` / ${doc.chapterTitle}` : "";
-        return `<li>${escapeHtml(source + chapter)} · ${Number(doc.score || 0).toFixed(2)}</li>`;
+        return `<li>${escapeHtml(sourceLabel(doc.sourceType))} · ${escapeHtml(source + chapter)} · ${escapeHtml(scoreLabel(doc))}</li>`;
       })
       .join("");
     card.innerHTML = `
@@ -609,7 +685,7 @@ function renderCompare(results) {
         <h3>${labels[mode]}</h3>
         <span class="mode-badge">${badges[mode]}</span>
       </div>
-      <div class="compare-meta">${escapeHtml(method)} · entidades: ${escapeHtml(entities)}${escapeHtml(graphMetaText)}</div>
+      <div class="compare-meta">${escapeHtml(method)}${escapeHtml(scoreText)}${escapeHtml(sourceText)} · entidades: ${escapeHtml(entities)}${escapeHtml(graphMetaText)}</div>
       <div class="compare-answer">${renderAnswer(result.answer || "")}</div>
       <div class="method-note">${limits[mode]}</div>
       ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : `<p class="muted">Sem evidencias textuais diretas neste modo.</p>`}
@@ -657,8 +733,8 @@ async function loadCypherExamples() {
 function renderCypherLesson(example) {
   if (!example) {
     graphLessonTitle.textContent = "Query customizada";
-    graphLessonText.textContent = "Edite ou rode uma consulta read-only. Se quiser que o grafo acompanhe a tabela, selecione um exemplo didatico.";
-    graphLessonGnn.textContent = "Queries livres nao tem mapeamento didatico automatico.";
+    graphLessonText.textContent = "Consultas read-only retornam tabela; exemplos predefinidos tambem sincronizam o subgrafo.";
+    graphLessonGnn.textContent = "Queries livres nao tem mapeamento GNN predefinido.";
     graphLessonVisual.textContent = "visualizacao livre";
     graphLessonCaption.textContent = "O grafo permanece no centro e hops atuais.";
     return;
@@ -666,9 +742,9 @@ function renderCypherLesson(example) {
   const visual = example.visual || {};
   graphLessonTitle.textContent = example.title || "Exemplo Cypher";
   graphLessonText.textContent = example.lesson || example.explain || "";
-  graphLessonGnn.textContent = example.gnn || "Use a consulta para explicar estrutura e propagacao.";
+  graphLessonGnn.textContent = example.gnn || "A consulta revela estrutura local e propagacao entre entidades.";
   graphLessonVisual.textContent = visual.center ? `${visual.center} · ${visual.hops || 1}-hop` : "visualizacao livre";
-  graphLessonCaption.textContent = visual.caption || "A tabela e o grafo devem ser lidos juntos.";
+  graphLessonCaption.textContent = visual.caption || "Tabela e grafo compartilham a mesma selecao estrutural.";
 }
 
 function selectCypherExample(exampleId, options = {}) {
@@ -721,7 +797,7 @@ function renderTable(columns, rows, target) {
       return `<tr>${cells}</tr>`;
     })
     .join("");
-  target.innerHTML = `<p class="table-note">${rows.length} linhas retornadas. Leia a tabela junto com o grafo ao lado.</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  target.innerHTML = `<p class="table-note">${rows.length} linhas retornadas. Tabela sincronizada com a consulta estrutural.</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function formatCell(value) {
@@ -761,7 +837,7 @@ function renderLecture() {
   lectureProgress.textContent = `Etapa ${state.lectureIndex + 1} de ${steps.length}`;
   lectureProgressBar.style.width = `${progress}%`;
   lecturePoints.innerHTML = (step.talkingPoints || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("");
-  lectureDemoAction.textContent = step.demoAction || "Aplique o passo no playground e discuta o resultado.";
+  lectureDemoAction.textContent = step.demoAction || "A etapa atual define pergunta, modo e parametros do workspace.";
   lectureSpeakerNotes.innerHTML = (step.speakerNotes || [])
     .map((note) => `<li>${escapeHtml(note)}</li>`)
     .join("");

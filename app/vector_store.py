@@ -123,6 +123,7 @@ class VectorStore:
         seed_entities: list[str] | None = None,
         graph_entities: list[str] | None = None,
         source_type: str | None = None,
+        apply_boost: bool = False,
     ) -> list[dict[str, Any]]:
         vectors, metadata = self.load()
         query_embedding = np.array(ollama.embed([query], model=model)[0], dtype=np.float32)
@@ -139,9 +140,11 @@ class VectorStore:
             mentions = set(meta.get("mentions") or [])
             seed_hits = mentions & seed_set
             graph_hits = mentions & graph_set
-            graph_boost = len(seed_hits) * 0.08 + min(len(graph_hits), 8) * 0.015
-            if len(seed_hits) >= 2:
-                graph_boost += 0.08
+            graph_boost = 0.0
+            if apply_boost:
+                graph_boost = len(seed_hits) * 0.08 + min(len(graph_hits), 8) * 0.015
+                if len(seed_hits) >= 2:
+                    graph_boost += 0.08
             final_score = float(base_score) + graph_boost
             doc = dict(meta)
             doc.pop("_index", None)

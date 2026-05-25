@@ -44,7 +44,7 @@ Modelos Ollama detectados nesta maquina:
 - `lfm2:latest` como alternativa
 - `nomic-embed-text:latest` como default para embeddings do RAG vetorial
 
-A UI consulta `/api/tags` do Ollama local no host e preenche o seletor **Modelo LLM** automaticamente. O modelo escolhido ali e enviado para `/api/ask` e `/api/compare` quando `LLM local` estiver ligado.
+A UI consulta `/api/tags` do Ollama local no host e preenche o seletor **Modelo LLM** automaticamente. A chave **Sintese com LLM** decide se `/api/ask` e `/api/compare` ficam em retrieval-only ou usam Ollama para sintetizar as evidencias.
 
 ## Como Rodar
 
@@ -127,7 +127,7 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
    - Mostrar Graph: bom para caminho/vizinhanca, mas pobre em explicacao.
    - Mostrar GraphRAG: entidades + subgrafo + chunks ligados ao subgrafo.
    - Alterar `hops=1`, `hops=2`, `hops=3`.
-   - Ligar a chave `LLM local` apenas quando o modelo ja estiver preaquecido.
+   - Ligar a chave `Sintese com LLM` apenas quando o modelo ja estiver preaquecido.
 
 5. **Conexao com GNN (8 min)**
    - `k-hop neighborhood` como campo receptivo.
