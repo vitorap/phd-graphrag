@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GraphRAG em Middle-earth</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>GraphRAG em Middle-earth</h1>
+          <p>Neo4j + LOTR interaction graph + LOTRO OWL + Ollama</p>
+        </div>
+        <div class="stats-strip" id="statsStrip">
+          <span>Entidades: --</span>
+          <span>Relacoes: --</span>
+          <span>Personagens: --</span>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <aside class="control-panel">
+          <label class="field">
+            <span>Pergunta</span>
+            <textarea id="questionInput" rows="5">Como Frodo se conecta a Sauron?</textarea>
+          </label>
+
+          <div class="control-row">
+            <label class="field compact">
+              <span>Saltos</span>
+              <select id="hopsInput">
+                <option value="1">1-hop</option>
+                <option value="2" selected>2-hop</option>
+                <option value="3">3-hop</option>
+                <option value="4">4-hop</option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span>Modo</span>
+              <select id="modeInput">
+                <option value="graph" selected>Graph</option>
+                <option value="baseline">Baseline</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Centro do grafo</span>
+            <input id="centerInput" value="Frodo" />
+          </label>
+
+          <label class="toggle-field">
+            <input id="llmInput" type="checkbox" />
+            <span>LLM local</span>
+          </label>
+
+          <div class="button-row">
+            <button id="graphButton" class="secondary-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7zM5 5v4M5 15v4M19 5v4M19 15v4M9 5h6M9 19h6"/></svg>
+              Grafo
+            </button>
+            <button id="askButton" class="primary-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H7l-3 4zM8 9h8M8 12h5"/></svg>
+              Responder
+            </button>
+          </div>
+
+          <div class="mini-panel">
+            <h2>Entidades</h2>
+            <div id="entitiesList" class="tag-list"></div>
+          </div>
+
+          <div class="mini-panel">
+            <h2>Top PageRank</h2>
+            <ol id="topList" class="rank-list"></ol>
+          </div>
+        </aside>
+
+        <section class="graph-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Subgrafo Recuperado</h2>
+              <p id="graphMeta">Carregando grafo...</p>
+            </div>
+            <div class="legend">
+              <span class="dot character"></span>Personagem
+              <span class="dot weapon"></span>Arma
+              <span class="dot place"></span>Lugar
+              <span class="dot language"></span>Lingua
+            </div>
+          </div>
+          <svg id="graphSvg" role="img" aria-label="Visualizacao do grafo"></svg>
+        </section>
+
+        <section class="answer-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Resposta</h2>
+              <p id="llmStatus">Aguardando pergunta</p>
+            </div>
+          </div>
+          <article id="answerBox" class="answer-box"></article>
+          <details class="context-box" open>
+            <summary>Contexto recuperado</summary>
+            <pre id="contextBox"></pre>
+          </details>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

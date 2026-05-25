@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Any
+
+import networkx as nx
+from neo4j import GraphDatabase
+
+from app.config import settings
+
+
+SEMANTIC_REL_TYPES = [
+    "FRIEND_OF",
+    "ENEMY_OF",
+    "HAS_WEAPON",
+    "INHABITANT",
+    "SPEAKS",
+    "SPOKEN_BY",
+    "SPOKEN_IN",
+    "ADOPTED",
+    "ADOPTED_BY",
+    "NEPHEW_OF",
+    "UNCLE_OF",
+    "HAS_RACE",
+    "HAS_NAME",
+    "HAS_FAMILY_NAME",
+    "LOCATED_IN",
+    "COUSIN_OF",
+]
+
+
+class Neo4jClient:
+    def __init__(
+        self,
+        uri: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        self.driver = GraphDatabase.driver(
+            uri or settings.neo4j_uri,
+            auth=(username or settings.neo4j_username, password or settings.neo4j_password),
+        )
+
+    def close(self) -> None:
+        self.driver.close()
+
+    def ping(self) -> bool:
+        with self.driver.session() as session:
+            session.run("RETURN 1").consume()
+        return True
+
+    def stats(self) -> dict[str, Any]:
+        with self.driver.session() as session:
+            counts = session.run(
+                """
+                MATCH (n:Entity)
+                WITH count(n) AS entities
+                MATCH ()-[r]->()
+                WITH entities, count(r) AS relationships
+                MATCH (c:Character)
+                RETURN entities, relationships, count(c) AS characters
+                """
+            ).single()
+            rels = session.run(
+                """
+                MATCH ()-[r]->()
+                RETURN type(r) AS type, count(r) AS count
+                ORDER BY count DESC, type
+                """
+            )
+            top = session.run(
+                """
+                MATCH (c:Character)
+                RETURN c.name AS name, c.race AS race, c.pagerank AS pagerank,
+                       c.weightedDegree AS weightedDegree, c.community AS community
+                ORDER BY c.pagerank DESC
+                LIMIT 12
+                """
+            )
+            return {
+                "entities": counts["entities"] if counts else 0,
+                "relationships": counts["relationships"] if counts else 0,
+                "characters": counts["characters"] if counts else 0,
+                "relationshipTypes": [dict(row) for row in rels],
+                "topCharacters": [dict(row) for row in top],
+            }
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (e:Entity)
+                RETURN e.name AS name, e.aliases AS aliases, labels(e) AS labels,
+                       e.kind AS kind, e.pagerank AS pagerank
+                ORDER BY coalesce(e.pagerank, 0) DESC, e.name
+                """
+            )
+            return [dict(row) for row in rows]
+
+    def top_characters(self, limit: int = 12) -> list[dict[str, Any]]:
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (c:Character)
+                RETURN c.name AS name, c.race AS race, c.gender AS gender,
+                       c.pagerank AS pagerank, c.weightedDegree AS weightedDegree,
+                       c.community AS community
+                ORDER BY c.pagerank DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            return [dict(row) for row in rows]
+
+    def graph(self, center: str | None = None, hops: int = 1, limit: int = 160) -> dict[str, Any]:
+        if center:
+            graph = self.subgraph_for_seeds([center], hops=hops, limit=limit)
+            if graph["nodes"]:
+                return graph
+        return self.global_graph(limit=limit)
+
+    def global_graph(self, limit: int = 160) -> dict[str, Any]:
+        with self.driver.session() as session:
+            row = session.run(
+                """
+                MATCH (a:Entity)-[r]->(b:Entity)
+                WITH a, r, b
+                ORDER BY CASE type(r)
+                    WHEN 'INTERACTS_WITH' THEN coalesce(r.weight, 1)
+                    ELSE 1
+                END DESC
+                LIMIT $limit
+                WITH collect(DISTINCT r) AS rels, collect(DISTINCT a) + collect(DISTINCT b) AS rawNodes
+                UNWIND rawNodes AS n
+                WITH collect(DISTINCT n) AS nodes, rels
+                RETURN
+                  [n IN nodes | {
+                    id: elementId(n),
+                    name: n.name,
+                    labels: labels(n),
+                    kind: n.kind,
+                    race: n.race,
+                    gender: n.gender,
+                    pagerank: n.pagerank,
+                    community: n.community,
+                    weightedDegree: n.weightedDegree
+                  }] AS nodes,
+                  [r IN rels | {
+                    id: elementId(r),
+                    source: elementId(startNode(r)),
+                    target: elementId(endNode(r)),
+                    sourceName: startNode(r).name,
+                    targetName: endNode(r).name,
+                    type: type(r),
+                    weight: coalesce(r.weight, 1),
+                    sourceDataset: r.sourceDataset
+                  }] AS edges
+                """,
+                limit=limit,
+            ).single()
+        return self._with_layout(row["nodes"] if row else [], row["edges"] if row else [])
+
+    def subgraph_for_seeds(self, seeds: list[str], hops: int = 2, limit: int = 180) -> dict[str, Any]:
+        hops = max(1, min(int(hops), 4))
+        seeds = [seed for seed in seeds if seed]
+        if not seeds:
+            return self.global_graph(limit=limit)
+        with self.driver.session() as session:
+            row = session.run(
+                f"""
+                MATCH (seed:Entity)
+                WHERE seed.name IN $seeds
+                MATCH p = (seed)-[*1..{hops}]-(n:Entity)
+                WITH p, n
+                ORDER BY length(p), coalesce(n.pagerank, 0) DESC
+                LIMIT $limit
+                WITH collect(p) AS paths
+                UNWIND paths AS p
+                UNWIND nodes(p) AS n
+                WITH paths, collect(DISTINCT n) AS nodes
+                UNWIND paths AS p
+                UNWIND relationships(p) AS r
+                WITH nodes, collect(DISTINCT r) AS rels
+                RETURN
+                  [n IN nodes | {{
+                    id: elementId(n),
+                    name: n.name,
+                    labels: labels(n),
+                    kind: n.kind,
+                    race: n.race,
+                    gender: n.gender,
+                    pagerank: n.pagerank,
+                    community: n.community,
+                    weightedDegree: n.weightedDegree
+                  }}] AS nodes,
+                  [r IN rels | {{
+                    id: elementId(r),
+                    source: elementId(startNode(r)),
+                    target: elementId(endNode(r)),
+                    sourceName: startNode(r).name,
+                    targetName: endNode(r).name,
+                    type: type(r),
+                    weight: coalesce(r.weight, 1),
+                    sourceDataset: r.sourceDataset
+                  }}] AS edges
+                """,
+                seeds=seeds,
+                limit=limit,
+            ).single()
+        return self._with_layout(row["nodes"] if row else [], row["edges"] if row else [])
+
+    def shortest_path(self, source: str, target: str, max_depth: int = 5) -> list[str]:
+        max_depth = max(1, min(int(max_depth), 6))
+        with self.driver.session() as session:
+            row = session.run(
+                f"""
+                MATCH (a:Entity {{name: $source}})
+                MATCH (b:Entity {{name: $target}})
+                MATCH p = shortestPath((a)-[*..{max_depth}]-(b))
+                RETURN [n IN nodes(p) | n.name] AS names
+                """,
+                source=source,
+                target=target,
+            ).single()
+            return row["names"] if row else []
+
+    def top_neighbors(self, name: str, limit: int = 10) -> list[dict[str, Any]]:
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (:Entity {name: $name})-[r]-(n:Entity)
+                RETURN n.name AS name, type(r) AS relation, coalesce(r.weight, 1) AS weight,
+                       n.kind AS kind, n.race AS race, n.pagerank AS pagerank
+                ORDER BY weight DESC, coalesce(n.pagerank, 0) DESC
+                LIMIT $limit
+                """,
+                name=name,
+                limit=limit,
+            )
+            return [dict(row) for row in rows]
+
+    def _with_layout(self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Any]:
+        by_id = {node["id"]: node for node in nodes}
+        graph = nx.Graph()
+        for node in nodes:
+            graph.add_node(node["id"])
+        for edge in edges:
+            if edge["source"] in by_id and edge["target"] in by_id:
+                graph.add_edge(edge["source"], edge["target"], weight=float(edge.get("weight") or 1))
+
+        if graph.number_of_nodes() == 0:
+            return {"nodes": [], "edges": []}
+        if graph.number_of_nodes() == 1:
+            positions = {next(iter(graph.nodes)): (0.0, 0.0)}
+        else:
+            positions = nx.spring_layout(graph, seed=42, weight="weight", iterations=80)
+
+        for node in nodes:
+            x, y = positions.get(node["id"], (0.0, 0.0))
+            node["x"] = float(x)
+            node["y"] = float(y)
+            node["size"] = self._node_size(node)
+            node["group"] = self._node_group(node)
+        return {"nodes": nodes, "edges": edges}
+
+    @staticmethod
+    def _node_size(node: dict[str, Any]) -> float:
+        weighted_degree = node.get("weightedDegree") or 0
+        pagerank = node.get("pagerank") or 0
+        return min(28.0, 8.0 + (weighted_degree ** 0.35) + pagerank * 150)
+
+    @staticmethod
+    def _node_group(node: dict[str, Any]) -> str:
+        labels = set(node.get("labels") or [])
+        if "Character" in labels:
+            return "character"
+        if "Weapon" in labels:
+            return "weapon"
+        if "Place" in labels:
+            return "place"
+        if "Language" in labels:
+            return "language"
+        if "Race" in labels:
+            return "race"
+        return "entity"
+

@@ -1,0 +1,2 @@
+"""GraphRAG LOTR demo app."""
+
