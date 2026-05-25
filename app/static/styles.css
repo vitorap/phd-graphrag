@@ -527,6 +527,7 @@ h4 {
 .workspace[data-view="rag"] .status-controls,
 .workspace[data-view="graph"] .graph-controls,
 .workspace[data-view="graph"] .status-controls,
+.workspace[data-view="graph"] .graph-example-controls,
 .workspace[data-view="graphrag"] .question-controls,
 .workspace[data-view="graphrag"] .retrieval-controls,
 .workspace[data-view="graphrag"] .graphrag-controls,
@@ -560,6 +561,28 @@ h4 {
 
 .run-controls {
   grid-template-columns: 1fr;
+}
+
+.graph-example-controls {
+  gap: 9px;
+}
+
+.control-divider {
+  background: linear-gradient(90deg, transparent, rgba(140, 117, 63, 0.55), transparent);
+  height: 1px;
+  margin: 2px 0 3px;
+}
+
+.side-example-head h2 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.side-example-head p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .demo-jump {
@@ -1139,33 +1162,46 @@ button:disabled {
   margin: 0;
 }
 
-.lesson-grid {
+.lesson-grid,
+.graph-flow-steps {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 12px;
 }
 
-.lesson-grid article {
+.lesson-grid article,
+.graph-flow-steps article {
   background: rgba(255, 247, 223, 0.68);
   border: 1px solid rgba(216, 210, 188, 0.8);
   border-radius: var(--radius-md);
-  min-height: 78px;
+  min-height: 92px;
   padding: 10px;
 }
 
-.lesson-grid strong {
+.lesson-grid strong,
+.graph-flow-steps strong {
   display: block;
   font-size: 12px;
   margin-bottom: 6px;
   text-transform: uppercase;
 }
 
-.lesson-grid span {
+.lesson-grid span,
+.graph-flow-steps span {
   color: var(--muted);
   display: block;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.graph-flow-steps code {
+  background: rgba(18, 61, 46, 0.08);
+  border: 1px solid rgba(31, 107, 75, 0.18);
+  border-radius: 6px;
+  color: var(--green-dark);
+  font-size: 11px;
+  padding: 1px 4px;
 }
 
 .query-rail {
@@ -1200,7 +1236,14 @@ button:disabled {
 .query-list {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+}
+
+.side-query-list {
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .query-item {
@@ -1211,8 +1254,9 @@ button:disabled {
   border-radius: var(--radius-md);
   box-shadow: var(--inner-shadow);
   flex-direction: column;
-  min-height: 108px;
-  padding: 10px;
+  min-height: 90px;
+  padding: 9px;
+  position: relative;
   text-align: left;
 }
 
@@ -1444,7 +1488,7 @@ th {
   cursor: pointer;
   display: grid;
   gap: 7px;
-  min-height: 150px;
+  min-height: 190px;
   padding: 12px;
   text-align: left;
   transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
@@ -1482,11 +1526,22 @@ th {
   margin: 0;
 }
 
+.strategy-card-meta {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+}
+
 .strategy-card small {
+  background: rgba(18, 61, 46, 0.07);
+  border: 1px solid rgba(18, 61, 46, 0.12);
+  border-radius: var(--radius-sm);
   color: var(--green-dark);
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 850;
+  line-height: 1.25;
+  padding: 6px 7px;
 }
 
 .active-strategy-panel {
@@ -1513,14 +1568,92 @@ th {
   color: rgba(255, 247, 223, 0.82);
 }
 
-.active-strategy-panel .architecture-flow {
-  margin-top: 0;
+.strategy-stage-map {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.active-strategy-panel .architecture-flow span {
+.strategy-stage-map article {
   background: rgba(255, 247, 223, 0.1);
-  border-color: rgba(255, 247, 223, 0.18);
+  border: 1px solid rgba(255, 247, 223, 0.18);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 4px;
+  min-height: 104px;
+  padding: 9px;
+  position: relative;
+}
+
+.strategy-stage-map article:not(:last-child)::after {
+  color: rgba(255, 247, 223, 0.52);
+  content: "->";
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 900;
+  position: absolute;
+  right: -9px;
+  top: 15px;
+}
+
+.strategy-stage-map strong {
+  align-items: center;
+  background: rgba(224, 193, 106, 0.18);
+  border: 1px solid rgba(224, 193, 106, 0.24);
+  border-radius: 999px;
   color: #fff7df;
+  display: inline-flex;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  height: 23px;
+  justify-content: center;
+  width: 23px;
+}
+
+.strategy-stage-map span,
+.strategy-explain-grid span {
+  color: #fff7df;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.strategy-stage-map p {
+  color: rgba(255, 247, 223, 0.74);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.strategy-explain-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-explain-grid article {
+  background: rgba(255, 247, 223, 0.08);
+  border: 1px solid rgba(255, 247, 223, 0.16);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 10px;
+}
+
+.strategy-explain-grid p {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.strategy-visual-hint {
+  background: rgba(224, 193, 106, 0.13);
+  border: 1px solid rgba(224, 193, 106, 0.24);
+  border-radius: var(--radius-md);
+  color: rgba(255, 247, 223, 0.88);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 9px 10px;
 }
 
 .strategy-risk {
@@ -1578,6 +1711,11 @@ th {
   font-size: 12px;
   line-height: 1.4;
   margin: 0;
+}
+
+.compact-strategy-button {
+  min-height: 34px;
+  padding: 7px 10px;
 }
 
 .strategy-result-metrics {
@@ -2604,7 +2742,7 @@ code {
     min-height: 560px;
   }
 
-  .query-list {
+  .graph-flow-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2614,6 +2752,10 @@ code {
 
   .strategy-card-grid,
   .strategy-compare-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-stage-map {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2693,12 +2835,15 @@ code {
   .strategy-layout,
   .strategy-card-grid,
   .strategy-compare-grid,
+  .strategy-stage-map,
+  .strategy-explain-grid,
   .trace-grid,
   .trace-doc-list,
   .trace-prompt-sections,
   .method-strip,
   .graph-workbench,
   .lesson-grid,
+  .graph-flow-steps,
   .lecture-layout,
   .lecture-info-grid,
   .lecture-question-card {
@@ -2707,6 +2852,10 @@ code {
 
   .trace-row {
     grid-template-columns: 1fr;
+  }
+
+  .strategy-stage-map article::after {
+    display: none;
   }
 
   .view-head,

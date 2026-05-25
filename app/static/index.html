@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-strategies" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-variant-nav" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -203,6 +203,15 @@
               </dl>
             </div>
           </section>
+
+          <section class="control-block graph-example-controls" aria-label="Exemplos Cypher">
+            <div class="control-divider"></div>
+            <div class="side-example-head">
+              <h2>Exemplos de aula</h2>
+              <p>Selecione um preset para preencher a descricao, executar Cypher e atualizar o subgrafo.</p>
+            </div>
+            <div id="cypherExamples" class="query-list side-query-list"></div>
+          </section>
         </aside>
 
         <section class="content-panel">
@@ -274,31 +283,32 @@
             <article class="graph-lesson" id="graphLesson">
               <div class="lesson-head">
                 <div>
-                  <p class="card-kicker">Exemplo selecionado</p>
-                  <h3 id="graphLessonTitle">Escolha uma query</h3>
+                  <p class="card-kicker">Fluxo Graph-only</p>
+                  <h3 id="graphLessonTitle">Cypher -> Subgrafo -> Leitura</h3>
                 </div>
-                <span id="graphLessonVisual" class="lesson-visual">visualizacao livre</span>
+                <span id="graphLessonVisual" class="lesson-visual">query auditavel</span>
               </div>
-              <p id="graphLessonText">Consultas estruturais atualizam a tabela e o subgrafo recuperado.</p>
-              <div class="lesson-grid">
+              <p id="graphLessonText">Descreva uma pergunta, gere uma query revisavel, recupere estrutura e sintetize apenas o grafo retornado.</p>
+              <div class="graph-flow-steps">
                 <article>
-                  <strong>GNN</strong>
-                  <span id="graphLessonGnn">O link com message passing aparece aqui.</span>
+                  <strong>1. Descrever</strong>
+                  <span>Linguagem natural vira uma intencao estrutural clara.</span>
                 </article>
                 <article>
-                  <strong>Leitura</strong>
-                  <span id="graphLessonCaption">Tabela e grafo compartilham a mesma selecao estrutural.</span>
+                  <strong>2. Consultar</strong>
+                  <span>Cypher read-only retorna tabela e, com <code>RETURN p</code>, subgrafo.</span>
+                </article>
+                <article>
+                  <strong>3. Inspecionar</strong>
+                  <span id="graphLessonGnn">Caminhos, vizinhos e pesos viram o material de message passing.</span>
+                </article>
+                <article>
+                  <strong>4. Explicar</strong>
+                  <span id="graphLessonCaption">A LLM usa somente nos, arestas, caminhos e linhas retornadas.</span>
                 </article>
               </div>
             </article>
             <div class="graph-workbench">
-              <aside class="query-rail">
-                <div class="query-rail-head">
-                  <h3>Exemplos de aula</h3>
-                  <span>Selecionar executa a query e atualiza o grafo</span>
-                </div>
-                <div id="cypherExamples" class="query-list"></div>
-              </aside>
               <section class="query-editor">
                 <label class="field">
                   <span>Descreva a consulta</span>
@@ -342,7 +352,26 @@
                 <span id="activeStrategyKicker">Variante ativa</span>
                 <h3 id="activeStrategyName">KG-as-Index / Graph Boost</h3>
                 <p id="activeStrategyDescription">O grafo funciona como indice estrutural para reforcar evidencias textuais.</p>
-                <div class="architecture-flow" id="activeStrategyFlow"></div>
+                <div class="strategy-stage-map" id="activeStrategyStageMap"></div>
+                <div class="strategy-explain-grid">
+                  <article>
+                    <span>Quando usar</span>
+                    <p id="activeStrategyBestFor"></p>
+                  </article>
+                  <article>
+                    <span>Papel do grafo</span>
+                    <p id="activeStrategyGraphRole"></p>
+                  </article>
+                  <article>
+                    <span>Evidencia textual</span>
+                    <p id="activeStrategyTextRole"></p>
+                  </article>
+                  <article>
+                    <span>Gancho de aula</span>
+                    <p id="activeStrategyLectureCue"></p>
+                  </article>
+                </div>
+                <div class="strategy-visual-hint" id="activeStrategyVisualHint"></div>
                 <div class="strategy-risk" id="activeStrategyRisk"></div>
                 <div class="strategy-references" id="activeStrategyReferences"></div>
               </article>
@@ -363,7 +392,7 @@
               </article>
               <article class="trace-panel">
                 <div class="trace-panel-head">
-                  <h3>Graph Retrieval</h3>
+                  <h3 id="traceGraphTitle">Graph Retrieval</h3>
                   <span id="traceGraphMeta">k-hop deterministico</span>
                 </div>
                 <div id="traceGraphEvidence" class="trace-evidence-list"></div>
@@ -371,14 +400,14 @@
             </div>
             <section class="trace-panel">
               <div class="trace-panel-head">
-                <h3>Vector Retrieval + Graph Boost</h3>
+                <h3 id="traceRetrievalTitle">Vector Retrieval + Graph Boost</h3>
                 <span id="traceRetrievalMeta">cosine + boost estrutural</span>
               </div>
               <div id="traceDocuments" class="trace-doc-list"></div>
             </section>
             <details class="trace-panel trace-prompt-panel">
               <summary>
-                <span>Prompt Assembly</span>
+                <span id="tracePromptTitle">Prompt Assembly</span>
                 <small id="tracePromptMeta">contexto estrutural + textual</small>
               </summary>
               <div id="tracePromptSections" class="trace-prompt-sections"></div>
@@ -500,6 +529,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-graph-workbench"></script>
+    <script src="/static/app.js?v=20260525-graphrag-variant-nav"></script>
   </body>
 </html>
