@@ -51,6 +51,24 @@ def stats() -> dict[str, Any]:
         client.close()
 
 
+@app.get("/api/models")
+def models() -> dict[str, Any]:
+    ollama = OllamaClient()
+    try:
+        return {
+            "ok": True,
+            "defaultModel": ollama.model,
+            "models": ollama.list_models(),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "defaultModel": ollama.model,
+            "models": [{"name": ollama.model}],
+            "error": str(exc),
+        }
+
+
 @app.get("/api/graph")
 def graph(
     center: str | None = None,

@@ -28,3 +28,25 @@ class OllamaClient:
         response.raise_for_status()
         data = response.json()
         return data.get("message", {}).get("content", "").strip()
+
+    def list_models(self, timeout: int = 5) -> list[dict[str, str | int | None]]:
+        response = requests.get(f"{self.base_url}/api/tags", timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        models: list[dict[str, str | int | None]] = []
+        for item in data.get("models", []):
+            details = item.get("details") or {}
+            name = item.get("name") or item.get("model")
+            if not name:
+                continue
+            models.append(
+                {
+                    "name": name,
+                    "size": item.get("size"),
+                    "family": details.get("family"),
+                    "parameterSize": details.get("parameter_size"),
+                    "quantization": details.get("quantization_level"),
+                }
+            )
+        models.sort(key=lambda model: (model["name"] != self.model, str(model["name"])))
+        return models

@@ -74,6 +74,73 @@ textarea {
   white-space: nowrap;
 }
 
+.stat-item {
+  border-bottom: 1px dotted rgba(31, 107, 75, 0.55);
+  cursor: help;
+  position: relative;
+}
+
+.stat-item strong {
+  font-weight: 800;
+}
+
+.stat-item::after {
+  background: var(--ink);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  color: #fff;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  font-weight: 600;
+  left: 50%;
+  line-height: 1.45;
+  max-width: calc(100vw - 48px);
+  opacity: 0;
+  padding: 10px 12px;
+  pointer-events: none;
+  position: absolute;
+  text-transform: none;
+  top: calc(100% + 10px);
+  transform: translateX(-50%) translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: normal;
+  width: 320px;
+  z-index: 20;
+}
+
+.stat-item::before {
+  border: 6px solid transparent;
+  border-bottom-color: var(--ink);
+  content: "";
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: calc(100% - 1px);
+  transform: translateX(-50%) translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 21;
+}
+
+.stat-item:nth-last-child(-n + 2)::after {
+  left: auto;
+  right: 0;
+  transform: translateY(-4px);
+}
+
+.stat-item:hover::after,
+.stat-item:focus-visible::after,
+.stat-item:hover::before,
+.stat-item:focus-visible::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.stat-item:nth-last-child(-n + 2):hover::after,
+.stat-item:nth-last-child(-n + 2):focus-visible::after {
+  transform: translateY(0);
+}
+
 .workspace {
   display: grid;
   gap: 16px;

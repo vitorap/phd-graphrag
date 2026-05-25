@@ -24,6 +24,7 @@ Entregar uma aplicacao local que:
 - Banco: Neo4j.
 - LLM: Ollama local no host, acessado pelo app em Docker via `host.docker.internal:11434`.
 - Modelo default: `qwen3.6:latest`.
+- A UI deve listar modelos do Ollama via `/api/models`, que usa `/api/tags` no host.
 - Dataset principal: Raphtory LOTR cooccurrence graph + SNA_LOTR.
 - Camada semantica: `Lotro/lotro.github.io` OWL ontology.
 - Corpus textual: textos completos limpos e scripts do SNA_LOTR versionados em `data/raw/sna_lotr/`.

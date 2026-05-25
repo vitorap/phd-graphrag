@@ -84,7 +84,14 @@ class GraphRAG:
         try:
             answer = self.ollama.chat(self.messages(question, context), model=model)
             if not answer.strip():
-                answer = self.extractive_answer(question, entities, graph, llm_error="resposta vazia do Ollama")
+                answer = self.extractive_answer(
+                    question,
+                    entities,
+                    graph,
+                    documents,
+                    mode,
+                    llm_error="resposta vazia do Ollama",
+                )
                 status = "fallback: resposta vazia do Ollama"
             else:
                 status = "ok"

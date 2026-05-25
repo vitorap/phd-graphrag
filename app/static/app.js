@@ -2,6 +2,7 @@ const graphSvg = document.querySelector("#graphSvg");
 const questionInput = document.querySelector("#questionInput");
 const hopsInput = document.querySelector("#hopsInput");
 const modeInput = document.querySelector("#modeInput");
+const modelInput = document.querySelector("#modelInput");
 const centerInput = document.querySelector("#centerInput");
 const llmInput = document.querySelector("#llmInput");
 const graphButton = document.querySelector("#graphButton");
@@ -24,6 +25,25 @@ const COLORS = {
   language: "#3c5f94",
   race: "#6f5aa8",
   entity: "#64736b",
+};
+
+const STAT_TOOLTIPS = {
+  entities:
+    "Nos do tipo Entity no Neo4j. Inclui personagens, racas, armas, lugares, linguas e outros conceitos que podem aparecer no grafo.",
+  relationships:
+    "Total de arestas dirigidas no Neo4j. Inclui relacoes semanticas da ontologia, coocorrencias, interacoes, mencoes de texto, falas, capitulos e links preditos.",
+  characters:
+    "Subconjunto de entidades com label Character. Sao os personagens usados em PageRank, vizinhanca k-hop, caminhos e deteccao de entidades nas perguntas.",
+  sources:
+    "Obras de origem carregadas no corpus: livros completos e scripts dos filmes. Isto e o mais proximo de 'documentos fonte' ou arquivos originais.",
+  chapters:
+    "Capitulos identificados nos livros limpos. Eles estruturam os chunks de livro e tambem alimentam relacoes de similaridade entre capitulos.",
+  retrievalUnits:
+    "Unidades recuperaveis pelo RAG/BM25. E a soma de TextChunk dos livros + DialogueLine dos scripts. No codigo, a label tecnica RetrievalDocument significa 'passagem recuperavel', nao arquivo fonte.",
+  textChunks:
+    "Chunks dos livros completos. Cada chunk tem cerca de 360 palavras com overlap de 60 palavras, para recuperar passagens narrativas sem mandar capitulos inteiros ao LLM.",
+  dialogueLines:
+    "Falas dos scripts dos filmes. Cada linha de dialogo vira uma unidade RAG propria, ligada ao personagem que fala e as entidades mencionadas.",
 };
 
 async function getJson(url, options = {}) {
@@ -55,23 +75,72 @@ function setTags(names) {
   }
 }
 
+function createStat(label, value, tooltip) {
+  const item = document.createElement("span");
+  item.className = "stat-item";
+  item.tabIndex = 0;
+  item.dataset.tooltip = tooltip;
+  item.setAttribute("aria-label", `${label}: ${value}. ${tooltip}`);
+  const labelNode = document.createElement("strong");
+  labelNode.textContent = `${label}: `;
+  item.append(labelNode, document.createTextNode(String(value)));
+  return item;
+}
+
 function renderStats(stats) {
-  statsStrip.innerHTML = `
-    <span>Entidades: ${stats.entities}</span>
-    <span>Relacoes: ${stats.relationships}</span>
-    <span>Personagens: ${stats.characters}</span>
-    <span>Fontes: ${stats.books || 0} livros + ${stats.movies || 0} filmes</span>
-    <span>Capitulos: ${stats.chapters || 0}</span>
-    <span>Unidades RAG: ${stats.retrievalDocuments || 0}</span>
-    <span>Chunks livro: ${stats.textChunks || 0}</span>
-    <span>Falas script: ${stats.dialogueLines || 0}</span>
-  `;
+  statsStrip.innerHTML = "";
+  statsStrip.append(
+    createStat("Entidades", stats.entities || 0, STAT_TOOLTIPS.entities),
+    createStat("Relacoes", stats.relationships || 0, STAT_TOOLTIPS.relationships),
+    createStat("Personagens", stats.characters || 0, STAT_TOOLTIPS.characters),
+    createStat("Fontes", `${stats.books || 0} livros + ${stats.movies || 0} filmes`, STAT_TOOLTIPS.sources),
+    createStat("Capitulos", stats.chapters || 0, STAT_TOOLTIPS.chapters),
+    createStat("Unidades RAG", stats.retrievalDocuments || 0, STAT_TOOLTIPS.retrievalUnits),
+    createStat("Chunks livro", stats.textChunks || 0, STAT_TOOLTIPS.textChunks),
+    createStat("Falas script", stats.dialogueLines || 0, STAT_TOOLTIPS.dialogueLines),
+  );
   topList.innerHTML = "";
   for (const item of stats.topCharacters || []) {
     const row = document.createElement("li");
     const pagerank = Number(item.pagerank || 0).toFixed(3);
     row.textContent = `${item.name} · PR ${pagerank}`;
     topList.appendChild(row);
+  }
+}
+
+function formatModelOption(model) {
+  const details = [model.parameterSize, model.quantization].filter(Boolean).join(" · ");
+  return details ? `${model.name} · ${details}` : model.name;
+}
+
+async function loadModels() {
+  modelInput.disabled = true;
+  modelInput.innerHTML = `<option value="">Carregando Ollama...</option>`;
+  try {
+    const payload = await getJson("/api/models");
+    const models = payload.models || [];
+    modelInput.innerHTML = "";
+    for (const model of models) {
+      const option = document.createElement("option");
+      option.value = model.name;
+      option.textContent = formatModelOption(model);
+      if (model.name === payload.defaultModel) option.selected = true;
+      modelInput.appendChild(option);
+    }
+    if (!models.length) {
+      const option = document.createElement("option");
+      option.value = payload.defaultModel || "";
+      option.textContent = payload.defaultModel || "Ollama sem modelos";
+      modelInput.appendChild(option);
+    }
+    modelInput.disabled = !modelInput.value;
+    modelInput.title = payload.ok
+      ? "Modelos lidos do Ollama local do host."
+      : `Ollama indisponivel; usando default. ${payload.error || ""}`;
+  } catch (error) {
+    modelInput.innerHTML = `<option value="">Ollama indisponivel</option>`;
+    modelInput.disabled = true;
+    modelInput.title = error.message;
   }
 }
 
@@ -248,6 +317,7 @@ async function askQuestion() {
       question: questionInput.value,
       hops: Number(hopsInput.value),
       mode: modeInput.value,
+      model: modelInput.value || null,
       use_llm: llmInput.checked,
     };
     const result = await getJson("/api/ask", {
@@ -287,6 +357,7 @@ async function compareQuestion() {
       question: questionInput.value,
       hops: Number(hopsInput.value),
       mode: modeInput.value,
+      model: modelInput.value || null,
       use_llm: llmInput.checked,
     };
     const result = await getJson("/api/compare", {
@@ -313,12 +384,14 @@ async function compareQuestion() {
 
 async function boot() {
   setTags([]);
+  const modelsPromise = loadModels();
   try {
     const stats = await getJson("/api/stats");
     renderStats(stats);
   } catch (error) {
     statsStrip.innerHTML = `<span>Neo4j indisponivel</span>`;
   }
+  await modelsPromise;
   await loadGraph();
 }
 

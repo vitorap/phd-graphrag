@@ -42,6 +42,8 @@ Modelos Ollama detectados nesta maquina:
 - `gemma4:26b` como alternativa
 - `lfm2:latest` como alternativa
 
+A UI consulta `/api/tags` do Ollama local no host e preenche o seletor **Modelo LLM** automaticamente. O modelo escolhido ali e enviado para `/api/ask` e `/api/compare` quando `LLM local` estiver ligado.
+
 ## Como Rodar
 
 ```bash
@@ -224,6 +226,8 @@ Se quiser trocar o modelo:
 ```bash
 make ask Q="Como Frodo se conecta a Sauron?" MODEL=gemma4:26b
 ```
+
+Na UI, use o seletor **Modelo LLM**. Ele lista os modelos disponiveis no Ollama local da maquina.
 
 Se quiser explorar a janela longa do `qwen3.6:latest`, aumente `NUM_CTX`. Para a demo, o default e propositalmente menor para reduzir latencia:
 
