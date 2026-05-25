@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Any
 
 import networkx as nx
 from neo4j import GraphDatabase
+from neo4j.graph import Node, Path, Relationship
 
 from app.config import settings
 
@@ -29,6 +31,11 @@ SEMANTIC_REL_TYPES = [
     "CO_OCCURS_WITH",
     "PREDICTED_LINK",
 ]
+
+FORBIDDEN_CYPHER = re.compile(
+    r"\b(CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|LOAD\s+CSV|CALL\s+dbms|CALL\s+apoc\.periodic)\b",
+    re.IGNORECASE,
+)
 
 
 class Neo4jClient:
@@ -322,6 +329,26 @@ class Neo4jClient:
             )
             return [dict(row) for row in rows]
 
+    def run_readonly_cypher(self, query: str, limit: int = 100) -> dict[str, Any]:
+        query = query.strip()
+        if not query:
+            raise ValueError("Cypher vazio")
+        if ";" in query:
+            raise ValueError("Use uma unica consulta Cypher por vez")
+        if FORBIDDEN_CYPHER.search(query):
+            raise ValueError("A demo aceita apenas consultas read-only")
+        if not re.match(r"^(MATCH|OPTIONAL\s+MATCH|WITH|RETURN|UNWIND|CALL\s+db\.)\b", query, re.IGNORECASE):
+            raise ValueError("Consulta precisa comecar com MATCH, WITH, RETURN, UNWIND ou CALL db.*")
+
+        wrapped = f"{query}\nLIMIT {int(max(1, min(limit, 300)))}"
+        if re.search(r"\bLIMIT\b", query, re.IGNORECASE):
+            wrapped = query
+        with self.driver.session(default_access_mode="READ") as session:
+            result = session.run(wrapped)
+            keys = result.keys()
+            rows = [{key: json_safe(row.get(key)) for key in keys} for row in result]
+        return {"columns": keys, "rows": rows, "query": wrapped}
+
     def _with_layout(self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Any]:
         by_id = {node["id"]: node for node in nodes}
         graph = nx.Graph()
@@ -366,3 +393,30 @@ class Neo4jClient:
         if "Race" in labels:
             return "race"
         return "entity"
+
+
+def json_safe(value: Any) -> Any:
+    if isinstance(value, Node):
+        return {"id": element_id(value), "labels": list(value.labels), **dict(value)}
+    if isinstance(value, Relationship):
+        return {
+            "id": element_id(value),
+            "type": value.type,
+            "source": element_id(value.start_node),
+            "target": element_id(value.end_node),
+            **dict(value),
+        }
+    if isinstance(value, Path):
+        return {
+            "nodes": [json_safe(node) for node in value.nodes],
+            "relationships": [json_safe(rel) for rel in value.relationships],
+        }
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    return value
+
+
+def element_id(value: Node | Relationship) -> str:
+    return getattr(value, "element_id", str(value.id))

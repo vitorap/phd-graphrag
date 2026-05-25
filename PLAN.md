@@ -2,7 +2,7 @@
 
 ## Tese da Demo
 
-GraphRAG e uma ponte natural entre Knowledge Graphs, LLMs e GNNs: em vez de recuperar apenas textos por similaridade, recuperamos uma vizinhanca estruturada, com entidades, relacoes, caminhos e metricas de grafo. Essa vizinhanca e o equivalente pratico do campo receptivo que uma GNN usaria para propagar informacao.
+GraphRAG e uma ponte natural entre Knowledge Graphs, LLMs e GNNs: em vez de recuperar apenas textos por embedding, recuperamos tambem uma vizinhanca estruturada, com entidades, relacoes, caminhos e metricas de grafo. Essa vizinhanca e o equivalente pratico do campo receptivo que uma GNN usaria para propagar informacao.
 
 ## Entrega Esperada
 
@@ -12,7 +12,7 @@ GraphRAG e uma ponte natural entre Knowledge Graphs, LLMs e GNNs: em vez de recu
 - Makefile com comandos de apresentacao.
 - README com roteiro da aula.
 - Scripts reproduziveis para download, ingestao, metricas e perguntas.
-- Comparacao explicita entre RAG textual, Graph e GraphRAG hibrido.
+- Comparacao explicita entre RAG vetorial, Graph e GraphRAG hibrido.
 
 ## Fase 1: Documentacao e Roteiro
 
@@ -102,7 +102,8 @@ Tarefas:
 
 - Resolver entidades a partir da pergunta.
 - Recuperar subgrafo por `hops`.
-- Recuperar chunks/falas por BM25.
+- Recuperar chunks/falas por embeddings quando o indice vetorial estiver pronto.
+- Usar BM25 apenas como fallback.
 - Oferecer modos `rag`, `graph` e `hybrid`.
 - Gerar contexto textual com:
   - entidades detectadas;
@@ -132,10 +133,13 @@ Tarefas:
 - Criar UI com:
   - painel de pergunta;
   - seletor de hops;
+  - seletor de top-k;
+  - seletor de modelo Ollama;
   - grafo SVG interativo;
   - entidades detectadas;
   - contexto recuperado;
   - resposta do LLM;
+  - views Overview, RAG, Graph, GraphRAG, Compare e Lecture;
   - comparacao lado a lado entre RAG, Graph e GraphRAG;
   - stats do grafo.
 
@@ -166,7 +170,9 @@ Critério de pronto:
 2. `make up`
 3. `make data`
 4. `make seed`
-5. `make stats`
+5. `make ollama-pull-embed`
+6. `make vectors`
+7. `make stats`
 6. Abrir Neo4j Browser.
 7. Abrir app.
 8. Perguntar sobre Frodo/Sauron.
@@ -189,7 +195,7 @@ Critério de pronto:
 - Se a fala tera 20 ou 40 minutos.
 - Qual modelo Ollama usar no dia.
 - Se o parceiro vai cobrir introducao teorica.
-- Se vale incluir uma comparacao explicita com RAG vetorial simples.
+- Se vale trocar o modelo de embedding default para `bge-m3` caso a maquina tenha memoria sobrando.
 
 ## Fase 8: Enriquecimento Maximo LOTR
 
@@ -198,8 +204,34 @@ Status: concluida.
 Tarefas:
 
 - Versionar `data/raw/sna_lotr/` completo.
-- Criar corpus BM25 local sem embeddings externos.
+- Criar corpus recuperavel local.
 - Criar `scripts/compare.py`.
 - Atualizar `Makefile` com `MODE` e `make compare`.
 - Atualizar app para exibir comparacao em tres colunas.
 - Validar que a pergunta Frodo/Sauron produz resposta hibrida mais rica que grafo puro.
+
+## Fase 9: RAG Vetorial e Aula Interativa
+
+Status: em andamento.
+
+Tarefas:
+
+- Gerar embeddings via Ollama local com `nomic-embed-text:latest`.
+- Persistir indice vetorial em `data/vector_store/`.
+- Criar `scripts/build_vectors.py`.
+- Criar `make vectors`, `make smoke-vectors` e `make ollama-pull-embed`.
+- Fazer `rag` usar vector search por cosine similarity.
+- Manter BM25 como fallback.
+- Criar `/api/vector/status` e `/api/vector-search`.
+- Criar `/api/cypher/examples` e `/api/cypher/run` read-only.
+- Criar `/api/lecture`.
+- Refatorar a UI em Overview, RAG, Graph, GraphRAG, Compare e Lecture.
+- Adicionar pan/zoom no grafo SVG.
+
+Critério de pronto:
+
+- `/api/ask` retorna `retrieval.method = vector` quando o indice existe.
+- UI mostra status do indice vetorial.
+- RAG Playground exibe evidencias com score, cosine e boost.
+- Graph Playground executa queries read-only.
+- Lecture Mode aplica passos e revela quiz.

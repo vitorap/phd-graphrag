@@ -1,6 +1,6 @@
 # GraphRAG em Middle-earth
 
-Demo pratica para uma aula/seminario de GNN, Knowledge Graphs e LLMs. A ideia e mostrar, em uma unica aplicacao local com Docker, como RAG textual, Graph retrieval e GraphRAG hibrido se comportam em perguntas sobre Senhor dos Aneis, conectando chunks narrativos, subgrafos k-hop e intuicoes de GNN/message passing.
+Demo pratica para uma aula/seminario de GNN, Knowledge Graphs e LLMs. A ideia e mostrar, em uma unica aplicacao local com Docker, como RAG vetorial por embeddings, Graph retrieval e GraphRAG hibrido se comportam em perguntas sobre Senhor dos Aneis, conectando chunks narrativos, subgrafos k-hop e intuicoes de GNN/message passing.
 
 ## Objetivo da Aula
 
@@ -15,7 +15,7 @@ A demo usa quatro fontes complementares:
 - **SNA_LOTR**: livros limpos, scripts dos filmes, personagens, redes ponderadas, links por capitulo, sentimento e arquivos de link prediction.
 - **Corpus textual local**: chunks dos livros e falas dos filmes ligados a entidades por `MENTIONS`.
 
-No dashboard, **Fontes** sao os arquivos/obras de origem: 3 livros e 3 filmes. **Unidades RAG** sao as passagens indexadas e recuperaveis pelo BM25: `TextChunk` dos livros + `DialogueLine` dos scripts. Portanto, neste projeto `RetrievalDocument` e uma superclasse tecnica para "coisa recuperavel pelo RAG", nao um documento fonte/arquivo.
+No dashboard, **Fontes** sao os arquivos/obras de origem: 3 livros e 3 filmes. **Unidades RAG** sao as passagens indexadas e recuperaveis por embedding: `TextChunk` dos livros + `DialogueLine` dos scripts. Portanto, neste projeto `RetrievalDocument` e uma superclasse tecnica para "coisa recuperavel pelo RAG", nao um documento fonte/arquivo.
 
 O resultado e um grafo hibrido e textual:
 
@@ -33,7 +33,8 @@ O resultado e um grafo hibrido e textual:
 - Neo4j Community
 - FastAPI
 - JavaScript/SVG nativo para visualizacao
-- Ollama local no host para gerar respostas
+- Ollama local no host para gerar respostas e embeddings
+- Vector store local persistido em `data/vector_store/` com embeddings normalizados (`.npz` + metadata JSON)
 - Python para ingestao, metricas e retrieval
 
 Modelos Ollama detectados nesta maquina:
@@ -41,6 +42,7 @@ Modelos Ollama detectados nesta maquina:
 - `qwen3.6:latest` usado como default, com `context length 262144` reportado por `ollama show`
 - `gemma4:26b` como alternativa
 - `lfm2:latest` como alternativa
+- `nomic-embed-text:latest` como default para embeddings do RAG vetorial
 
 A UI consulta `/api/tags` do Ollama local no host e preenche o seletor **Modelo LLM** automaticamente. O modelo escolhido ali e enviado para `/api/ask` e `/api/compare` quando `LLM local` estiver ligado.
 
@@ -51,6 +53,8 @@ make help
 make up
 make data
 make seed
+make ollama-pull-embed
+make vectors
 make compare Q="Qual a relação de Frodo com Sauron?"
 make ollama-warm
 make app
@@ -74,11 +78,14 @@ make help         # lista comandos de apresentacao
 make up           # sobe Neo4j e app
 make data         # baixa datasets para data/raw
 make seed         # importa e enriquece o grafo no Neo4j
+make vectors      # gera embeddings e indice vetorial local
 make stats        # mostra estatisticas do grafo
 make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
 make ask Q="Como Frodo se conecta a Sauron?" MODE=rag
 make ask Q="Como Frodo se conecta a Sauron?" MODE=graph
 make compare Q="Qual a relação de Frodo com Sauron?"
+make smoke-vectors
+make ollama-pull-embed
 make ollama-show  # mostra metadados do modelo local
 make ollama-warm  # preaquece o modelo local antes da apresentacao
 make logs         # acompanha logs
@@ -116,7 +123,7 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
 
 4. **Comparacao RAG vs Graph vs GraphRAG (12 min)**
    - Rodar `make compare Q="Qual a relação de Frodo com Sauron?"`.
-   - Mostrar RAG textual: bom para narrativa, sem estrutura explicita.
+   - Mostrar RAG vetorial: bom para narrativa, sem estrutura explicita.
    - Mostrar Graph: bom para caminho/vizinhanca, mas pobre em explicacao.
    - Mostrar GraphRAG: entidades + subgrafo + chunks ligados ao subgrafo.
    - Alterar `hops=1`, `hops=2`, `hops=3`.
@@ -131,7 +138,7 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
 6. **Limitacoes e Extensoes (2 min)**
    - Coocorrencia nao e causalidade.
    - Ontologia e pequena, mas semanticamente rica.
-   - Proximo passo: embeddings, GDS, node classification, link prediction.
+   - Proximo passo: GDS, node classification, link prediction e ranking de subgrafos.
 
 ## Consultas Cypher para Mostrar
 
@@ -184,7 +191,8 @@ LIMIT 10;
 - **Dataset hibrido e rico**: Raphtory da densidade estrutural; LOTRO OWL da semantica; SNA_LOTR da corpus textual, rede ponderada e features.
 - **Ollama local**: evita dependencia de API externa.
 - **Docker-first**: parceiro consegue rodar com os mesmos comandos.
-- **BM25 local**: suficiente para a aula e nao exige embeddings/downloads extras.
+- **RAG vetorial local**: embeddings gerados no Ollama com `nomic-embed-text:latest` e cosine similarity em um indice persistido simples.
+- **BM25 como fallback**: se o indice vetorial ainda nao existir, a demo ainda recupera evidencias textuais sem travar.
 
 ## Perguntas Centrais para Fechar com o Professor/Turma
 
@@ -228,6 +236,15 @@ make ask Q="Como Frodo se conecta a Sauron?" MODEL=gemma4:26b
 ```
 
 Na UI, use o seletor **Modelo LLM**. Ele lista os modelos disponiveis no Ollama local da maquina.
+
+Para o RAG vetorial, baixe o modelo de embedding e gere o indice:
+
+```bash
+make ollama-pull-embed EMBED_MODEL=nomic-embed-text:latest
+make vectors EMBED_MODEL=nomic-embed-text:latest
+```
+
+O endpoint `/api/vector/status` mostra se o indice esta pronto. O endpoint `/api/vector-search` expõe a busca vetorial usada no playground.
 
 Se quiser explorar a janela longa do `qwen3.6:latest`, aumente `NUM_CTX`. Para a demo, o default e propositalmente menor para reduzir latencia:
 

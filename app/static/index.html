@@ -9,16 +9,28 @@
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
-          <h1>GraphRAG em Middle-earth</h1>
-          <p>Neo4j + livros/scripts LOTR + LOTRO OWL + Ollama</p>
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">GR</div>
+          <div>
+            <h1>GraphRAG em Middle-earth</h1>
+            <p>Neo4j + embeddings Ollama + livros/scripts LOTR + aula interativa</p>
+          </div>
         </div>
-        <div class="stats-strip" id="statsStrip">
-          <span>Entidades: --</span>
-          <span>Relacoes: --</span>
-          <span>Personagens: --</span>
-        </div>
+        <nav class="view-tabs" aria-label="Navegacao principal">
+          <button class="tab-button active" data-view="overview" type="button">Overview</button>
+          <button class="tab-button" data-view="rag" type="button">RAG</button>
+          <button class="tab-button" data-view="graph" type="button">Graph</button>
+          <button class="tab-button" data-view="graphrag" type="button">GraphRAG</button>
+          <button class="tab-button" data-view="compare" type="button">Compare</button>
+          <button class="tab-button" data-view="lecture" type="button">Lecture</button>
+        </nav>
       </header>
+
+      <section class="stats-strip" id="statsStrip">
+        <span>Entidades: --</span>
+        <span>Relacoes: --</span>
+        <span>Personagens: --</span>
+      </section>
 
       <section class="workspace">
         <aside class="control-panel">
@@ -38,6 +50,13 @@
               </select>
             </label>
             <label class="field compact">
+              <span>Top-k</span>
+              <input id="topKInput" min="3" max="16" step="1" type="number" value="8" />
+            </label>
+          </div>
+
+          <div class="control-row">
+            <label class="field compact">
               <span>Modo</span>
               <select id="modeInput">
                 <option value="hybrid" selected>GraphRAG</option>
@@ -45,17 +64,11 @@
                 <option value="graph">Graph</option>
               </select>
             </label>
+            <label class="field compact">
+              <span>Centro</span>
+              <input id="centerInput" value="Frodo" />
+            </label>
           </div>
-
-          <label class="field">
-            <span>Centro do grafo</span>
-            <input id="centerInput" value="Frodo" />
-          </label>
-
-          <label class="toggle-field">
-            <input id="llmInput" type="checkbox" />
-            <span>LLM local</span>
-          </label>
 
           <label class="field">
             <span>Modelo LLM</span>
@@ -64,43 +77,179 @@
             </select>
           </label>
 
+          <label class="toggle-field">
+            <input id="llmInput" type="checkbox" />
+            <span>LLM local</span>
+          </label>
+
           <div class="button-row">
-            <button id="graphButton" class="secondary-button" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7zM5 5v4M5 15v4M19 5v4M19 15v4M9 5h6M9 19h6"/></svg>
-              Grafo
-            </button>
-            <button id="askButton" class="primary-button" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H7l-3 4zM8 9h8M8 12h5"/></svg>
-              Responder
-            </button>
-            <button id="compareButton" class="secondary-button wide-button" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h7v12H4zM13 6h7v12h-7zM7 9h1M16 9h1M7 12h1M16 12h1"/></svg>
-              Comparar
-            </button>
+            <button id="askButton" class="primary-button" type="button">Responder</button>
+            <button id="compareButton" class="secondary-button" type="button">Comparar</button>
+            <button id="graphButton" class="secondary-button" type="button">Grafo</button>
           </div>
 
           <div class="mini-panel">
-            <h2>Entidades</h2>
+            <h2>Entidades Detectadas</h2>
             <div id="entitiesList" class="tag-list"></div>
           </div>
 
           <div class="mini-panel">
-            <h2>Top PageRank</h2>
-            <ol id="topList" class="rank-list"></ol>
+            <h2>Status</h2>
+            <dl class="status-list">
+              <div><dt>LLM</dt><dd id="llmStatus">Aguardando</dd></div>
+              <div><dt>Vetores</dt><dd id="vectorStatus">Carregando</dd></div>
+            </dl>
           </div>
         </aside>
+
+        <section class="content-panel">
+          <section class="view active" id="view-overview">
+            <div class="view-head">
+              <div>
+                <h2>Visao Geral</h2>
+                <p>Comece aqui: corpus, grafo, vetores, modelos e perguntas fortes para a aula.</p>
+              </div>
+              <a class="ghost-link" href="http://localhost:7474" target="_blank" rel="noreferrer">Abrir Neo4j Browser</a>
+            </div>
+
+            <div class="overview-grid">
+              <article class="panel-card">
+                <h3>Pipeline da Demo</h3>
+                <ol class="pipeline-list">
+                  <li><strong>RAG</strong><span>pergunta vira embedding e busca chunks/falas por similaridade.</span></li>
+                  <li><strong>Graph</strong><span>entidades viram vizinhanca k-hop, caminhos e centralidade.</span></li>
+                  <li><strong>GraphRAG</strong><span>o grafo guia e reforca a busca vetorial.</span></li>
+                </ol>
+              </article>
+
+              <article class="panel-card">
+                <h3>Top PageRank</h3>
+                <ol id="topList" class="rank-list"></ol>
+              </article>
+
+              <article class="panel-card">
+                <h3>Perguntas Fortes</h3>
+                <div class="prompt-grid" id="promptGrid"></div>
+              </article>
+
+              <article class="panel-card">
+                <h3>Neo4j</h3>
+                <p class="muted">Use no Browser: usuario <code>neo4j</code>, senha <code>graphrag-lotr</code>.</p>
+                <button class="secondary-button wide-button" id="copyStarterCypher" type="button">Copiar Cypher inicial</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="view" id="view-rag">
+            <div class="view-head">
+              <div>
+                <h2>RAG Vetorial</h2>
+                <p>Embedding retrieval sobre chunks dos livros e falas dos scripts.</p>
+              </div>
+              <button class="primary-button" id="ragSearchButton" type="button">Buscar Evidencias</button>
+            </div>
+            <div class="method-strip">
+              <span>Pergunta -> embedding</span>
+              <span>cosine similarity</span>
+              <span>top-k chunks/falas</span>
+              <span>resposta</span>
+            </div>
+            <div id="ragEvidence" class="evidence-cards"></div>
+          </section>
+
+          <section class="view" id="view-graph">
+            <div class="view-head">
+              <div>
+                <h2>Graph Playground</h2>
+                <p>Cypher read-only, caminhos, vizinhos, PageRank e comunidades.</p>
+              </div>
+              <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
+            </div>
+            <div class="graph-workbench">
+              <aside class="query-rail">
+                <h3>Exemplos</h3>
+                <div id="cypherExamples" class="query-list"></div>
+              </aside>
+              <section class="query-editor">
+                <label class="field">
+                  <span>Cypher</span>
+                  <textarea id="cypherInput" rows="9"></textarea>
+                </label>
+                <div class="button-row">
+                  <button class="secondary-button" id="copyCypherButton" type="button">Copiar Query</button>
+                  <a class="ghost-link" href="http://localhost:7474" target="_blank" rel="noreferrer">Abrir Neo4j</a>
+                </div>
+                <div id="cypherResults" class="table-wrap"></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="view-graphrag">
+            <div class="view-head">
+              <div>
+                <h2>GraphRAG Hibrido</h2>
+                <p>Entity resolution, expansao k-hop, evidencia estrutural e busca vetorial com boost do grafo.</p>
+              </div>
+              <button class="primary-button" id="hybridButton" type="button">Executar GraphRAG</button>
+            </div>
+            <div class="pipeline-board" id="pipelineBoard">
+              <article><strong>1</strong><span>Entidades</span><p id="pipeEntities">-</p></article>
+              <article><strong>2</strong><span>k-hop</span><p id="pipeGraph">-</p></article>
+              <article><strong>3</strong><span>Vetores</span><p id="pipeVectors">-</p></article>
+              <article><strong>4</strong><span>Resposta</span><p id="pipeAnswer">-</p></article>
+            </div>
+          </section>
+
+          <section class="view" id="view-compare">
+            <div class="view-head">
+              <div>
+                <h2>Comparacao</h2>
+                <p>RAG vs Graph vs GraphRAG, lado a lado, com evidencias e limites.</p>
+              </div>
+              <button class="primary-button" id="compareViewButton" type="button">Comparar Agora</button>
+            </div>
+            <div id="compareResults" class="compare-grid"></div>
+          </section>
+
+          <section class="view" id="view-lecture">
+            <div class="view-head">
+              <div>
+                <h2>Lecture Mode</h2>
+                <p>Roteiro interativo de 40 minutos com parametros e quizzes locais.</p>
+              </div>
+              <div class="button-row">
+                <button class="secondary-button" id="prevLectureButton" type="button">Voltar</button>
+                <button class="primary-button" id="nextLectureButton" type="button">Avancar</button>
+              </div>
+            </div>
+            <div class="lecture-layout">
+              <aside id="lectureSteps" class="lecture-steps"></aside>
+              <article class="lecture-card">
+                <p class="lecture-duration" id="lectureDuration">-</p>
+                <h3 id="lectureTitle">-</h3>
+                <ul id="lecturePoints"></ul>
+                <div class="quiz-box">
+                  <strong>Quiz</strong>
+                  <p id="quizQuestion">-</p>
+                  <button class="secondary-button" id="revealQuizButton" type="button">Revelar resposta</button>
+                  <p id="quizAnswer" class="quiz-answer"></p>
+                </div>
+                <button class="primary-button wide-button" id="applyLectureButton" type="button">Aplicar passo no playground</button>
+              </article>
+            </div>
+          </section>
+        </section>
 
         <section class="graph-panel">
           <div class="panel-header">
             <div>
-              <h2>Subgrafo Recuperado</h2>
+              <h2>Grafo Recuperado</h2>
               <p id="graphMeta">Carregando grafo...</p>
             </div>
-            <div class="legend">
-              <span class="dot character"></span>Personagem
-              <span class="dot weapon"></span>Arma
-              <span class="dot place"></span>Lugar
-              <span class="dot language"></span>Lingua
+            <div class="graph-tools">
+              <button class="icon-button" id="zoomOutButton" title="Zoom out" type="button">-</button>
+              <button class="icon-button" id="zoomResetButton" title="Resetar zoom" type="button">1:1</button>
+              <button class="icon-button" id="zoomInButton" title="Zoom in" type="button">+</button>
             </div>
           </div>
           <svg id="graphSvg" role="img" aria-label="Visualizacao do grafo"></svg>
@@ -109,12 +258,11 @@
         <section class="answer-panel">
           <div class="panel-header">
             <div>
-              <h2>Resposta</h2>
-              <p id="llmStatus">Aguardando pergunta</p>
+              <h2>Resposta e Contexto</h2>
+              <p id="answerMeta">Nenhuma execucao ainda</p>
             </div>
           </div>
           <article id="answerBox" class="answer-box"></article>
-          <div id="compareResults" class="compare-grid"></div>
           <details class="context-box" open>
             <summary>Contexto recuperado</summary>
             <pre id="contextBox"></pre>
@@ -123,6 +271,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-models"></script>
+    <script src="/static/app.js?v=20260525-lecture-vectors-2"></script>
   </body>
 </html>

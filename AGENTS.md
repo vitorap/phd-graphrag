@@ -14,8 +14,9 @@ Entregar uma aplicacao local que:
 - baixa e importa dados de Senhor dos Aneis;
 - cria um grafo hibrido no Neo4j;
 - mostra o grafo visualmente;
+- gera embeddings locais para chunks/falas;
 - executa retrieval por subgrafo/k-hop;
-- compara RAG textual, Graph retrieval e GraphRAG hibrido;
+- compara RAG vetorial, Graph retrieval e GraphRAG hibrido;
 - usa Ollama local no host para gerar respostas em portugues;
 - ajuda o apresentador a conectar GraphRAG com conceitos de GNN.
 
@@ -24,11 +25,13 @@ Entregar uma aplicacao local que:
 - Banco: Neo4j.
 - LLM: Ollama local no host, acessado pelo app em Docker via `host.docker.internal:11434`.
 - Modelo default: `qwen3.6:latest`.
+- Modelo default de embedding: `nomic-embed-text:latest`.
 - A UI deve listar modelos do Ollama via `/api/models`, que usa `/api/tags` no host.
 - Dataset principal: Raphtory LOTR cooccurrence graph + SNA_LOTR.
 - Camada semantica: `Lotro/lotro.github.io` OWL ontology.
 - Corpus textual: textos completos limpos e scripts do SNA_LOTR versionados em `data/raw/sna_lotr/`.
 - App: FastAPI + frontend estatico.
+- Vector store: indice local em `data/vector_store/`, gerado por `make vectors`, sem servico externo obrigatorio.
 - Visualizacao: SVG/JavaScript nativo, sem CDN obrigatorio.
 
 ## Regras de Engenharia
@@ -103,9 +106,10 @@ Relacoes principais:
   - `Strider` -> `Aragorn`
   - `Smeagol`/`Sméagol` -> `Gollum`
 - As respostas do LLM devem citar que sao baseadas no contexto recuperado, separando evidencia textual de evidencia estrutural quando for util.
-- `rag` usa BM25 sobre `RetrievalDocument`.
+- `rag` usa embeddings Ollama + cosine similarity sobre `RetrievalDocument`.
+- BM25 existe apenas como fallback quando o indice vetorial ainda nao foi gerado ou o modelo de embedding falha.
 - `graph` usa entidades, subgrafo k-hop, caminhos e vizinhos.
-- `hybrid` usa o subgrafo para orientar e reforcar chunks textuais ligados por `MENTIONS`.
+- `hybrid` usa o subgrafo para orientar e reforcar a busca vetorial em chunks/falas ligados por `MENTIONS`.
 
 ## Validacao Antes de Finalizar
 
@@ -115,6 +119,7 @@ Rodar:
 make up
 make data
 make seed
+make vectors
 make stats
 make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
 make compare Q="Qual a relação de Frodo com Sauron?"

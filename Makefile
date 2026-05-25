@@ -2,12 +2,14 @@ SHELL := /bin/sh
 
 Q ?= Como Frodo se conecta a Sauron?
 HOPS ?= 2
+TOP_K ?= 8
 MODE ?= hybrid
 MODEL ?= qwen3.6:latest
+EMBED_MODEL ?= nomic-embed-text:latest
 NUM_CTX ?= 16384
 TIMEOUT ?= 60
 
-.PHONY: help up down reset build data seed stats ask compare app neo4j logs ps shell smoke bootstrap ollama-list ollama-show ollama-warm
+.PHONY: help up down reset build data seed vectors stats ask compare app neo4j logs ps shell smoke smoke-vectors bootstrap ollama-list ollama-show ollama-warm ollama-pull-embed
 
 help:
 	@printf "\nGraphRAG em Middle-earth\n"
@@ -15,9 +17,11 @@ help:
 	@printf "make up       Sobe Neo4j e app\n"
 	@printf "make data     Baixa datasets para data/raw\n"
 	@printf "make seed     Importa o grafo hibrido no Neo4j\n"
+	@printf "make vectors  Gera embeddings e indice vetorial. Use EMBED_MODEL=nomic-embed-text:latest\n"
 	@printf "make stats    Mostra estatisticas do grafo\n"
-	@printf "make ask      Pergunta via CLI. Use Q=\"...\" MODE=hybrid HOPS=2 MODEL=qwen3.6:latest NUM_CTX=16384\n"
-	@printf "make compare  Compara RAG textual, Graph e GraphRAG. Use Q=\"...\" HOPS=2\n"
+	@printf "make ask      Pergunta via CLI. Use Q=\"...\" MODE=hybrid HOPS=2 TOP_K=8 MODEL=qwen3.6:latest\n"
+	@printf "make compare  Compara RAG vetorial, Graph e GraphRAG. Use Q=\"...\" HOPS=2 TOP_K=8\n"
+	@printf "make ollama-pull-embed  Baixa modelo local de embedding para RAG vetorial\n"
 	@printf "make ollama-show  Mostra metadados do modelo local\n"
 	@printf "make ollama-warm  Preaquece o modelo local antes da apresentacao\n"
 	@printf "make app      Mostra URL do app\n"
@@ -44,20 +48,26 @@ data: build
 seed:
 	docker compose run --rm app python scripts/import_graph.py
 
+vectors:
+	docker compose run --rm -e OLLAMA_EMBED_MODEL="$(EMBED_MODEL)" app python scripts/build_vectors.py --model "$(EMBED_MODEL)"
+
 stats:
 	docker compose run --rm app python scripts/stats.py
 
 ask:
-	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/ask.py "$(Q)" --hops "$(HOPS)" --mode "$(MODE)"
+	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/ask.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)" --mode "$(MODE)"
 
 compare:
-	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/compare.py "$(Q)" --hops "$(HOPS)"
+	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/compare.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)"
 
 ollama-list:
 	ollama list
 
 ollama-show:
 	ollama show "$(MODEL)"
+
+ollama-pull-embed:
+	ollama pull "$(EMBED_MODEL)"
 
 ollama-warm:
 	ollama run "$(MODEL)" "/no_think\nResponda exatamente: ok"
@@ -84,4 +94,7 @@ smoke:
 	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/ask.py "Como Frodo se conecta a Sauron?" --hops 2 --mode hybrid --no-llm
 	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/compare.py "Como Frodo se conecta a Sauron?" --hops 2
 
-bootstrap: up data seed stats
+smoke-vectors:
+	docker compose run --rm -e OLLAMA_EMBED_MODEL="$(EMBED_MODEL)" -e VECTOR_DIR=/tmp/phd-graphrag-smoke-vectors app sh -c 'python scripts/build_vectors.py --model "$(EMBED_MODEL)" --limit 16 && python scripts/ask.py "Como Frodo se conecta a Sauron?" --hops 2 --mode rag --no-llm'
+
+bootstrap: ollama-pull-embed up data seed vectors stats

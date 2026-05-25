@@ -19,6 +19,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Pergunta ao GraphRAG via CLI.")
     parser.add_argument("question", help="pergunta em linguagem natural")
     parser.add_argument("--hops", type=int, default=2, help="profundidade k-hop")
+    parser.add_argument("--top-k", type=int, default=8, help="numero de evidencias textuais recuperadas")
     parser.add_argument("--mode", default="hybrid", choices=["rag", "graph", "hybrid", "baseline"], help="modo de retrieval")
     parser.add_argument("--no-llm", action="store_true", help="mostra so contexto recuperado")
     parser.add_argument("--json", action="store_true", help="imprime JSON completo")
@@ -27,7 +28,13 @@ def main() -> int:
     try:
         client = Neo4jClient()
         rag = GraphRAG(client, OllamaClient())
-        result = rag.answer(args.question, hops=args.hops, mode=args.mode, use_llm=not args.no_llm)
+        result = rag.answer(
+            args.question,
+            hops=args.hops,
+            top_k=args.top_k,
+            mode=args.mode,
+            use_llm=not args.no_llm,
+        )
         client.close()
     except Exception as exc:
         print(f"erro: {exc}", file=sys.stderr)

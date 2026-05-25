@@ -31,8 +31,10 @@ services:
       NEO4J_PASSWORD: graphrag-lotr
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: qwen3.6:latest
+      OLLAMA_EMBED_MODEL: nomic-embed-text:latest
       OLLAMA_NUM_CTX: 16384
       OLLAMA_TIMEOUT: 60
+      VECTOR_DIR: /app/data/vector_store
     volumes:
       - .:/app
     depends_on:
