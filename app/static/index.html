@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-graph-cypher" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-page-background" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -91,15 +91,15 @@
           </div>
 
           <section class="control-block overview-controls" aria-label="Modos de recuperacao">
-            <button class="demo-jump" data-demo-mode="rag" data-demo-question="Por que o Anel importa para Frodo?" data-demo-view="rag" type="button">
+            <button class="demo-jump" data-demo-mode="rag" data-demo-question="Why does the One Ring matter to Frodo?" data-demo-view="rag" type="button">
               <strong>1. RAG</strong>
               <span>texto primeiro, sem estrutura explicita</span>
             </button>
-            <button class="demo-jump" data-demo-mode="graph" data-demo-question="Qual o caminho estrutural entre Frodo e Sauron?" data-demo-view="graph" type="button">
+            <button class="demo-jump" data-demo-mode="graph" data-demo-question="What structural path connects Frodo and Sauron?" data-demo-view="graph" type="button">
               <strong>2. Graph</strong>
               <span>vizinhos, caminhos e centralidade</span>
             </button>
-            <button class="demo-jump" data-demo-mode="hybrid" data-demo-question="Qual a relacao de Frodo com Sauron?" data-demo-view="graphrag" type="button">
+            <button class="demo-jump" data-demo-mode="hybrid" data-demo-question="How is Frodo connected to Sauron?" data-demo-view="graphrag" type="button">
               <strong>3. GraphRAG</strong>
               <span>grafo guia evidencias textuais</span>
             </button>
@@ -108,7 +108,7 @@
           <section class="control-block question-controls" aria-label="Pergunta">
             <label class="field">
               <span>Pergunta</span>
-              <textarea id="questionInput" rows="5">Como Frodo se conecta a Sauron?</textarea>
+              <textarea id="questionInput" rows="5">How is Frodo connected to Sauron?</textarea>
             </label>
           </section>
 
@@ -142,9 +142,9 @@
             <p class="control-note">Cada estrategia muda onde o grafo entra: antes, depois, como filtro, como caminho, como comunidade ou como query.</p>
           </section>
 
-          <section class="control-block graph-controls" aria-label="Modo centro e saltos">
+          <section class="control-block graph-controls" aria-label="Profundidade e centro do grafo">
             <div class="control-row">
-              <label class="field compact">
+              <label class="field compact hops-field">
                 <span>Saltos</span>
                 <select id="hopsInput">
                   <option value="1">1-hop</option>
@@ -153,7 +153,7 @@
                   <option value="4">4-hop</option>
                 </select>
               </label>
-              <label class="field compact">
+              <label class="field compact center-field">
                 <span>Centro</span>
                 <input id="centerInput" value="Frodo" />
               </label>
@@ -208,7 +208,7 @@
           <section class="control-block graph-example-controls" aria-label="Exemplos Cypher">
             <div class="control-divider"></div>
             <div class="side-example-head">
-              <h2>Exemplos de aula</h2>
+              <h2>Consultas prontas</h2>
               <p>Selecione um preset para preencher a descricao, executar Cypher e atualizar o subgrafo.</p>
             </div>
             <div id="cypherExamples" class="query-list side-query-list"></div>
@@ -313,7 +313,7 @@
               <section class="query-editor">
                 <label class="field">
                   <span>Descreva a consulta</span>
-                  <textarea id="cypherPromptInput" rows="4">relacoes entre elfos e orcs</textarea>
+                  <textarea id="cypherPromptInput" rows="4">relationships between Elves and Orcs</textarea>
                 </label>
                 <div class="button-row">
                   <button class="secondary-button" id="generateCypherButton" type="button">Gerar Cypher</button>
@@ -377,7 +377,7 @@
                       <p id="activeStrategyTextRole"></p>
                     </article>
                     <article>
-                      <span>Gancho de aula</span>
+                      <span>Leitura da estrategia</span>
                       <p id="activeStrategyLectureCue"></p>
                     </article>
                     <article class="strategy-risk-card">
@@ -541,6 +541,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-graph-cypher"></script>
+    <script src="/static/app.js?v=20260525-copy-polish"></script>
   </body>
 </html>

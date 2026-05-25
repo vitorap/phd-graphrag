@@ -35,22 +35,27 @@
 }
 
 html {
+  background: var(--bg);
   font-size: 16px;
+  min-height: 100%;
 }
 
 body {
   background:
-    linear-gradient(180deg, rgba(11, 17, 10, 0.74), rgba(11, 17, 10, 0.2) 28%, rgba(11, 17, 10, 0.86)),
+    linear-gradient(180deg, rgba(11, 17, 10, 0.74) 0, rgba(11, 17, 10, 0.2) 34rem, rgba(11, 17, 10, 0.86) 100%),
     radial-gradient(circle at 16% 8%, rgba(224, 193, 106, 0.18), transparent 26%),
     radial-gradient(circle at 88% 0%, rgba(31, 107, 75, 0.35), transparent 34%),
     url("/static/assets/parchment-map.svg"),
     var(--bg);
-  background-attachment: fixed;
+  background-attachment: scroll;
   background-blend-mode: multiply, screen, normal, normal, normal;
-  background-size: cover, auto, auto, cover, auto;
+  background-color: var(--bg);
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat, repeat;
+  background-size: 100% 100%, 760px 560px, 900px 620px, 1200px 720px, auto;
   color: var(--ink);
   font-family: var(--font-body);
   font-feature-settings: "kern", "liga";
+  isolation: isolate;
   line-height: 1.46;
   margin: 0;
   min-height: 100vh;
@@ -80,7 +85,7 @@ body::after {
   inset: 0;
   pointer-events: none;
   position: fixed;
-  z-index: -1;
+  z-index: 0;
 }
 
 button,
@@ -110,6 +115,7 @@ h4 {
   min-height: 100vh;
   padding: 18px;
   position: relative;
+  z-index: 1;
 }
 
 .topbar,
@@ -411,7 +417,7 @@ h4 {
 
 .workspace[data-view="graph"] {
   grid-template-areas: "controls content graph";
-  grid-template-columns: 270px minmax(640px, 1.05fr) minmax(460px, 0.9fr);
+  grid-template-columns: 340px minmax(600px, 1.05fr) minmax(430px, 0.9fr);
   grid-template-rows: auto;
 }
 
@@ -553,10 +559,19 @@ h4 {
   animation: viewEnter 180ms var(--ease-out) both;
 }
 
-.workspace[data-view="compare"] #graphButton,
+.workspace:not([data-view="graph"]) .center-field,
+.workspace:not([data-view="graph"]) #graphButton,
 .workspace[data-view="compare"] .action-ask,
 .workspace:not([data-view="compare"]) .action-compare {
   display: none;
+}
+
+.workspace:not([data-view="graph"]) .graph-controls .control-row {
+  grid-template-columns: 1fr;
+}
+
+.workspace:not([data-view="graph"]) .hops-field {
+  grid-column: 1 / -1;
 }
 
 .run-controls {
@@ -564,7 +579,7 @@ h4 {
 }
 
 .graph-example-controls {
-  gap: 9px;
+  gap: 12px;
 }
 
 .control-divider {
@@ -1314,9 +1329,9 @@ button[data-action-log]:focus-visible::before {
 }
 
 .side-query-list {
-  max-height: 560px;
-  overflow: auto;
-  padding-right: 2px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
   scrollbar-width: thin;
 }
 
@@ -1328,25 +1343,35 @@ button[data-action-log]:focus-visible::before {
   border-radius: var(--radius-md);
   box-shadow: var(--inner-shadow);
   flex-direction: column;
-  min-height: 90px;
-  padding: 9px;
+  gap: 7px;
+  min-height: 112px;
+  padding: 11px;
   position: relative;
   text-align: left;
+  white-space: normal;
+  width: 100%;
 }
 
 .query-item strong {
-  line-height: 1.15;
+  display: block;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+  width: 100%;
 }
 
 .query-item span {
   color: var(--muted);
+  display: block;
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 650;
-  line-height: 1.3;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  width: 100%;
 }
 
 .query-item small {
+  align-self: flex-start;
   background: rgba(31, 107, 75, 0.1);
   color: var(--green-dark);
   border-radius: 999px;
@@ -1355,6 +1380,7 @@ button[data-action-log]:focus-visible::before {
   font-size: 11px;
   font-weight: 900;
   padding: 4px 6px;
+  white-space: normal;
 }
 
 .query-item.active {
@@ -2942,7 +2968,7 @@ code {
     grid-template-areas:
       "controls content"
       "graph graph";
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 340px minmax(0, 1fr);
   }
 
   .workspace[data-view="graphrag"] {

@@ -44,7 +44,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas relacionais que precisam de texto narrativo e de uma trilha estrutural auditavel.",
         "graphRole": "Indice e reranker: o grafo nao substitui o embedding, ele altera a ordem das evidencias.",
         "textRole": "Embeddings continuam trazendo os chunks; o boost so favorece chunks conectados ao subgrafo.",
-        "lectureCue": "Use como baseline GraphRAG: e o mais facil de explicar e costuma melhorar a pergunta Frodo-Sauron.",
+        "lectureCue": "Baseline GraphRAG solido para perguntas relacionais como Frodo-Sauron.",
         "visualHint": "Procure docs com cosine alto e boost positivo; eles citam sementes ou vizinhos do subgrafo.",
         "risk": "Se o entity grounding errar, o boost amplifica o erro.",
         "references": [
@@ -72,7 +72,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas em que o texto deve liderar e o grafo serve para contextualizar hits encontrados.",
         "graphRole": "Explicador posterior: o grafo e derivado dos chunks recuperados, nao filtro inicial.",
         "textRole": "Cosine puro decide o top-k; a estrutura aparece depois como leitura complementar.",
-        "lectureCue": "Mostra uma evolucao natural do RAG: primeiro texto, depois grafo para justificar conexoes.",
+        "lectureCue": "RAG textual primeiro; o grafo entra depois para explicar conexoes encontradas.",
         "visualHint": "O score fica cosine puro; o subgrafo deve refletir entidades mencionadas pelos chunks.",
         "risk": "Se o top-k inicial nao trouxer boas entidades, o grafo expande contexto errado.",
         "references": [
@@ -100,7 +100,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas em que precisao e auditabilidade importam mais do que cobertura ampla.",
         "graphRole": "Filtro duro: define o conjunto candidato antes da resposta.",
         "textRole": "Texto ainda explica, mas precisa estar ligado por MENTIONS ao subgrafo ativado.",
-        "lectureCue": "Use para discutir recall vs precision: filtro forte reduz ruido e pode perder evidencias.",
+        "lectureCue": "Precision vs recall ficam visiveis: filtro forte reduz ruido e pode perder evidencias.",
         "visualHint": "Todos os docs devem ter seed hit, graph hit ou foco em entidades do subgrafo.",
         "risk": "Mais preciso, mas pode perder trechos bons que nao foram ligados por MENTIONS.",
         "references": [
@@ -128,7 +128,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas do tipo 'como A se conecta a B?' ou 'quem faz a ponte?'.",
         "graphRole": "Raciocinio por caminho: o grafo escolhe intermediarios e conectores.",
         "textRole": "Texto sustenta por que a ponte importa narrativamente.",
-        "lectureCue": "E a variante mais proxima da analogia com message passing k-hop e caminhos explicaveis.",
+        "lectureCue": "A variante mais proxima da analogia com message passing k-hop e caminhos explicaveis.",
         "visualHint": "Veja a linha Caminhos/Conectores no trace e docs com foco em entidades intermediarias.",
         "risk": "Caminho curto pode ser topologicamente valido e narrativamente fraco.",
         "references": [
@@ -156,7 +156,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas mais amplas sobre grupos, alianças, nucleos narrativos ou contexto ao redor de personagens.",
         "graphRole": "Agregador local-to-global: troca uma vizinhanca curta por uma comunidade estrutural.",
         "textRole": "Texto selecionado deve representar a comunidade, nao apenas a entidade exata.",
-        "lectureCue": "Use para explicar a ideia do Microsoft GraphRAG global/local sem precisar precomputar summaries.",
+        "lectureCue": "Aproxima a ideia Microsoft GraphRAG global/local sem depender de summaries precomputados.",
         "visualHint": "O subgrafo costuma ter menos ruido local e mais personagens da mesma comunidade.",
         "risk": "Comunidades resumem contexto, mas podem diluir relacoes especificas.",
         "references": [
@@ -184,7 +184,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas que podem virar consulta clara: entidades, relacoes, contagens, vizinhos ou documentos ligados.",
         "graphRole": "Plano simbolico: a query explicita exatamente o que foi buscado.",
         "textRole": "Docs entram por MENTIONS e entityHits; embedding nao decide o ranking principal.",
-        "lectureCue": "Use para conectar com a aba Graph e mostrar por que query-driven GraphRAG e uma familia propria.",
+        "lectureCue": "Conecta a aba Graph com a familia query-driven de GraphRAG.",
         "visualHint": "O trace deve marcar score como symbolic entity hits e mostrar a Cypher equivalente.",
         "risk": "A qualidade depende do entity grounding e do template escolhido; nao e geracao livre de Cypher.",
         "references": [
@@ -817,13 +817,18 @@ class GraphRAG:
             score_mode = "bm25"
         else:
             score_mode = "none"
+        best_doc = max(
+            documents,
+            key=lambda item: float(item.get("score") or 0.0),
+            default=None,
+        )
         return {
             "method": methods[0] if len(methods) == 1 else ("+".join(methods) if methods else "none"),
             "documents": len(documents),
             "bySource": dict(sorted(by_source.items())),
             "scoreMode": score_mode,
-            "topScore": float(documents[0].get("score") or 0.0) if documents else 0.0,
-            "topVectorScore": documents[0].get("vectorScore") if documents else None,
+            "topScore": float(best_doc.get("score") or 0.0) if best_doc else 0.0,
+            "topVectorScore": best_doc.get("vectorScore") if best_doc else None,
         }
 
     @staticmethod
@@ -1394,6 +1399,9 @@ class GraphRAG:
                         apply_boost=False,
                     )
                 )
+            documents.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+            for idx, doc in enumerate(documents, start=1):
+                doc["globalRank"] = idx
             return documents
 
         return self.retrieve_text_ranked(

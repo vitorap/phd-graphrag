@@ -132,12 +132,12 @@ const STAT_TOOLTIPS = {
 };
 
 const PROMPTS = [
-  "Qual a relacao de Frodo com Sauron?",
-  "Por que o Anel importa para Frodo?",
-  "Como Gandalf se conecta a Aragorn?",
-  "Quem sao os conectores entre Frodo e Mordor?",
-  "Qual personagem e estruturalmente central na rede?",
-  "O que muda quando aumento hops de 1 para 3?",
+  "How is Frodo connected to Sauron?",
+  "Why does the One Ring matter to Frodo?",
+  "How does Gandalf connect to Aragorn?",
+  "Who are the connectors between Frodo and Mordor?",
+  "Which character is structurally central in the network?",
+  "What changes when I increase graph hops from 1 to 3?",
 ];
 
 const GRAPH_RAG_STRATEGIES = [
@@ -157,7 +157,7 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Perguntas relacionais com texto narrativo e trilha estrutural auditavel.",
     graphRole: "Indice e reranker: o grafo altera a ordem das evidencias.",
     textRole: "Embedding traz candidatos; o boost favorece chunks conectados ao subgrafo.",
-    lectureCue: "Use como baseline GraphRAG para a pergunta Frodo-Sauron.",
+    lectureCue: "Baseline GraphRAG solido para perguntas relacionais como Frodo-Sauron.",
     visualHint: "Procure cosine alto e boost positivo nos docs recuperados.",
     risk: "Bom default para perguntas relacionais; amplifica erro quando o entity grounding erra.",
     references: [
@@ -181,9 +181,9 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Quando o texto deve liderar e o grafo deve explicar os hits.",
     graphRole: "Explicador posterior derivado dos chunks recuperados.",
     textRole: "Cosine puro decide o top-k inicial.",
-    lectureCue: "Mostra como um RAG comum pode ganhar explicabilidade estrutural.",
+    lectureCue: "RAG textual primeiro; o grafo entra depois para explicar conexoes encontradas.",
     visualHint: "Score permanece cosine puro; sementes vêm de mencoes dos chunks.",
-    risk: "Didatico para mostrar RAG que ganha explicabilidade depois, mas depende muito dos primeiros chunks.",
+    risk: "Bom para observar RAG com explicabilidade posterior, mas depende muito dos primeiros chunks.",
     references: [
       ["RAG", "https://arxiv.org/abs/2005.11401"],
       ["LightRAG", "https://arxiv.org/abs/2410.05779"],
@@ -205,7 +205,7 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Quando precisao e auditabilidade importam mais que recall amplo.",
     graphRole: "Filtro duro do conjunto candidato.",
     textRole: "Texto explica, mas precisa estar ligado por MENTIONS.",
-    lectureCue: "Use para discutir precision vs recall.",
+    lectureCue: "Precision vs recall ficam visiveis: filtro forte reduz ruido e pode perder evidencias.",
     visualHint: "Docs devem trazer seed hit, graph hit ou foco do subgrafo.",
     risk: "Aumenta precisao e auditabilidade, mas pode remover trechos bons sem ligacao MENTIONS.",
     references: [
@@ -229,7 +229,7 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Perguntas 'como A se conecta a B?' ou 'quem faz a ponte?'.",
     graphRole: "Raciocinio por caminho e conectores 2-hop.",
     textRole: "Texto sustenta por que a ponte importa.",
-    lectureCue: "Boa ponte com message passing e receptive field.",
+    lectureCue: "A variante mais proxima da analogia com message passing e receptive field.",
     visualHint: "Veja Caminhos, Conectores e foco nos docs.",
     risk: "Caminhos curtos sao bons para explicar estrutura, mas nem sempre sao a melhor explicacao narrativa.",
     references: [
@@ -253,7 +253,7 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Perguntas amplas sobre grupos, aliancas e nucleos narrativos.",
     graphRole: "Agregador local-to-global por comunidade.",
     textRole: "Texto representa a comunidade, nao so a entidade exata.",
-    lectureCue: "Use para explicar GraphRAG global/local sem summaries precomputados.",
+    lectureCue: "Aproxima GraphRAG global/local sem depender de summaries precomputados.",
     visualHint: "Subgrafo deve destacar personagens da mesma comunidade.",
     risk: "Bom para perguntas amplas, mas pode diluir relacoes muito especificas.",
     references: [
@@ -266,7 +266,7 @@ const GRAPH_RAG_STRATEGIES = [
     shortName: "Cypher",
     name: "Symbolic Cypher / MENTIONS Query",
     description:
-      "Entidades da pergunta alimentam uma consulta simbolica auditavel; aqui a demo usa template segura e a aba Graph mostra geracao por LLM.",
+      "Entidades da pergunta alimentam uma consulta simbolica auditavel; esta aplicacao usa template seguro e a aba Graph mostra geracao por LLM.",
     flow: ["entidades", "Cypher", "linhas/docs", "grafo MENTIONS", "sintese"],
     stageDetails: [
       ["Entidades", "Nomes viram parametros da query."],
@@ -277,7 +277,7 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Perguntas que podem virar consulta clara por entidades, relacoes ou documentos ligados.",
     graphRole: "Plano simbolico e auditavel.",
     textRole: "Docs entram por MENTIONS; embedding nao decide o ranking principal.",
-    lectureCue: "Conecta a aba Graph com query-driven GraphRAG.",
+    lectureCue: "Conecta a aba Graph com a familia query-driven de GraphRAG.",
     visualHint: "Trace deve mostrar symbolic entity hits e a Cypher equivalente.",
     risk: "Excelente para auditoria, mas depende do entity grounding e do template escolhido.",
     references: [
@@ -507,7 +507,7 @@ function renderGraphRagTracePlaceholder() {
       <span>${escapeHtml(strategy.textRole || "Evidencias textuais entram conforme a estrategia selecionada.")}</span>
     </div>
     <div class="trace-row">
-      <strong>Aula</strong>
+      <strong>Variante</strong>
       <span>${escapeHtml(strategy.description || "Selecione uma estrategia GraphRAG.")}</span>
     </div>
   `;
@@ -1048,7 +1048,7 @@ function renderActiveGraphRagStrategy() {
   activeStrategyBestFor.textContent = strategy.bestFor || "Perguntas que precisam combinar grafo e texto.";
   activeStrategyGraphRole.textContent = strategy.graphRole || "O grafo define ou explica o contexto estrutural.";
   activeStrategyTextRole.textContent = strategy.textRole || "O texto sustenta a resposta com evidencias recuperadas.";
-  activeStrategyLectureCue.textContent = strategy.lectureCue || "Use a variante para contrastar onde o grafo entra no pipeline.";
+  activeStrategyLectureCue.textContent = strategy.lectureCue || "A variante destaca onde o grafo entra no pipeline.";
   activeStrategyVisualHint.textContent = strategy.visualHint ? `No trace: ${strategy.visualHint}` : "";
   activeStrategyRisk.textContent = strategy.risk || "";
   activeStrategyReferences.innerHTML = (strategy.references || [])
@@ -1586,6 +1586,23 @@ function renderStrategyCompare(results) {
   markStrategyCompareSelection(state.activeGraphRagStrategy);
 }
 
+function compareEvidenceDocs(mode, result) {
+  const docs = result.documents || [];
+  if (mode !== "rag") return docs.slice(0, 4);
+
+  const bySource = result.documentsBySource || groupDocumentsBySource(docs);
+  const balanced = [
+    ...(bySource.book || []).slice(0, 2),
+    ...(bySource.dialogue || []).slice(0, 2),
+  ];
+  const seen = new Set(balanced.map((doc) => doc.id));
+  for (const doc of docs) {
+    if (balanced.length >= 4) break;
+    if (!seen.has(doc.id)) balanced.push(doc);
+  }
+  return balanced;
+}
+
 function renderCompare(results) {
   const labels = {
     rag: "RAG Vetorial",
@@ -1593,9 +1610,9 @@ function renderCompare(results) {
     hybrid: "GraphRAG",
   };
   const limits = {
-    rag: "Texto puro: ranking por similaridade sobre livros e scripts.",
+    rag: "Texto puro: cosine separado por livros e scripts; sem boost estrutural.",
     graph: "Graph-only: subgrafo, caminhos e centralidade; zero chunks recuperados.",
-    hybrid: `GraphRAG: estrategia selecionada (${strategyById(graphRagStrategyInput?.value || "kg_index").shortName}).`,
+    hybrid: `GraphRAG: ${strategyById(graphRagStrategyInput?.value || "kg_index").shortName}; final = cosine + reforco do grafo.`,
   };
   const badges = {
     rag: "texto",
@@ -1613,13 +1630,13 @@ function renderCompare(results) {
     const entities = (result.entities || []).slice(0, 5).join(", ") || "sem entidades";
     const method = result.retrieval?.method || (mode === "graph" ? "subgrafo" : "retrieval");
     const counts = result.retrieval?.bySource || {};
-    const sourceText = mode === "rag"
+    const sourceText = counts.book || counts.dialogue
       ? ` · livros ${counts.book || 0} / scripts ${counts.dialogue || 0}`
       : "";
     const scoreText = result.retrieval?.scoreMode ? ` · ${result.retrieval.scoreMode}` : "";
     const graphMetaText = graph.nodes ? ` · ${graph.nodes.length} nos / ${graph.edges?.length || 0} arestas` : "";
-    const evidence = docs
-      .slice(0, 3)
+    const evidenceDocs = compareEvidenceDocs(mode, result);
+    const evidence = evidenceDocs
       .map((doc) => {
         const source = doc.sourceTitle || doc.sourceType || "texto";
         const chapter = doc.chapterTitle ? ` / ${doc.chapterTitle}` : "";
@@ -2120,12 +2137,14 @@ cypherInput.addEventListener("input", () => {
   document.querySelectorAll(".query-item").forEach((item) => item.classList.remove("active"));
   renderCypherLesson(null);
 });
-hopsInput.addEventListener("change", loadGraph);
+hopsInput.addEventListener("change", () => {
+  if (activeView() === "graph") loadGraph({ button: graphButton });
+});
 graphRagStrategyInput.addEventListener("change", () => {
   setGraphRagStrategy(graphRagStrategyInput.value);
 });
 centerInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") loadGraph();
+  if (event.key === "Enter" && activeView() === "graph") loadGraph({ button: graphButton });
 });
 zoomOutButton.addEventListener("click", () => zoomGraph(1.18));
 zoomInButton.addEventListener("click", () => zoomGraph(0.85));
