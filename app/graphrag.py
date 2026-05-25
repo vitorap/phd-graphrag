@@ -13,6 +13,121 @@ from app.text_utils import normalize, snippet, tokenize
 from app.vector_store import VectorStore
 
 
+GRAPH_RAG_STRATEGY_ORDER = [
+    "kg_index",
+    "vector_first",
+    "graph_filter",
+    "path",
+    "community",
+    "cypher",
+]
+
+GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
+    "kg_index": {
+        "id": "kg_index",
+        "name": "KG-as-Index / Graph Boost",
+        "shortName": "KG-as-Index",
+        "subtitle": "entity grounding -> k-hop subgraph -> vector retrieval with graph boost",
+        "description": "O grafo funciona como indice estrutural: entidades da pergunta abrem um subgrafo e os chunks vetoriais que mencionam esses nos ganham reforco no ranking.",
+        "graph": "deterministic_k_hop",
+        "text": "vector_similarity_plus_graph_boost",
+        "synthesis": "structural_and_textual_evidence",
+        "scoreFormula": "final = cosine + 0.08*seed_mentions + 0.015*subgraph_mentions_capped_8 + 0.08_if_two_seed_mentions",
+        "flow": ["pergunta", "entidades", "subgrafo k-hop", "boost vetorial", "sintese"],
+        "risk": "Se o entity grounding errar, o boost amplifica o erro.",
+        "references": [
+            {"label": "Microsoft GraphRAG Local Search", "url": "https://microsoft.github.io/graphrag/query/local_search/"},
+            {"label": "KG2RAG", "url": "https://arxiv.org/abs/2502.06864"},
+        ],
+    },
+    "vector_first": {
+        "id": "vector_first",
+        "name": "Vector-first Graph Expansion",
+        "shortName": "Vector-first",
+        "subtitle": "vector retrieval -> mentions -> graph expansion -> synthesis",
+        "description": "Comeca como RAG comum. Depois usa as entidades mencionadas nos chunks recuperados para abrir o grafo e explicar conexoes que o texto sozinho nao mostra.",
+        "graph": "expanded_from_vector_hits",
+        "text": "pure_vector_similarity",
+        "synthesis": "text_then_graph_context",
+        "scoreFormula": "final = cosine; graph is added after retrieval for explanation",
+        "flow": ["embedding", "top-k textual", "entidades dos chunks", "subgrafo", "sintese"],
+        "risk": "Se o top-k inicial nao trouxer boas entidades, o grafo expande contexto errado.",
+        "references": [
+            {"label": "RAG original", "url": "https://arxiv.org/abs/2005.11401"},
+            {"label": "LightRAG", "url": "https://arxiv.org/abs/2410.05779"},
+        ],
+    },
+    "graph_filter": {
+        "id": "graph_filter",
+        "name": "Graph-Constrained Retrieval",
+        "shortName": "Graph filter",
+        "subtitle": "entity grounding -> k-hop subgraph -> strict document filter -> rerank",
+        "description": "O grafo atua como filtro duro: so entram evidencias textuais que mencionam entidades do subgrafo ativado pela pergunta.",
+        "graph": "deterministic_k_hop",
+        "text": "vector_similarity_filtered_by_graph_mentions",
+        "synthesis": "filtered_text_with_graph_context",
+        "scoreFormula": "candidate docs must mention a seed or subgraph node; final score keeps cosine+boost",
+        "flow": ["entidades", "subgrafo", "docs ligados", "rerank", "sintese"],
+        "risk": "Mais preciso, mas pode perder trechos bons que nao foram ligados por MENTIONS.",
+        "references": [
+            {"label": "GRAG", "url": "https://arxiv.org/abs/2405.16506"},
+            {"label": "KG2RAG", "url": "https://arxiv.org/abs/2502.06864"},
+        ],
+    },
+    "path": {
+        "id": "path",
+        "name": "Path / Connector Retrieval",
+        "shortName": "Paths",
+        "subtitle": "entity pairs -> shortest paths/connectors -> path-aware evidence",
+        "description": "Foca em perguntas relacionais: caminhos curtos e conectores 2-hop definem quais entidades devem aparecer nas evidencias textuais.",
+        "graph": "shortest_paths_and_connectors",
+        "text": "vector_similarity_plus_path_entity_boost",
+        "synthesis": "path_explanation_with_text",
+        "scoreFormula": "final = cosine+graph_boost + 0.04*path_entity_mentions + 0.06_if_seed_pair_seen",
+        "flow": ["pares de entidades", "shortest path", "conectores", "chunks com ponte", "sintese"],
+        "risk": "Caminho curto pode ser topologicamente valido e narrativamente fraco.",
+        "references": [
+            {"label": "HippoRAG", "url": "https://arxiv.org/abs/2405.14831"},
+            {"label": "GNN-RAG", "url": "https://arxiv.org/abs/2405.20139"},
+        ],
+    },
+    "community": {
+        "id": "community",
+        "name": "Community / Local-to-Global",
+        "shortName": "Community",
+        "subtitle": "entity grounding -> graph community -> representative evidence",
+        "description": "Usa a comunidade estrutural dos personagens como contexto agregado, aproximando a ideia local-to-global sem precomputar summaries com LLM.",
+        "graph": "seed_community_subgraph",
+        "text": "vector_similarity_plus_community_entity_boost",
+        "synthesis": "community_context_plus_text",
+        "scoreFormula": "final = cosine + boost for mentions of seed/community entities",
+        "flow": ["entidades", "comunidade", "nos centrais", "evidencias representativas", "sintese"],
+        "risk": "Comunidades resumem contexto, mas podem diluir relacoes especificas.",
+        "references": [
+            {"label": "From Local to Global GraphRAG", "url": "https://arxiv.org/abs/2404.16130"},
+            {"label": "Microsoft Global Search", "url": "https://microsoft.github.io/graphrag/examples_notebooks/global_search/"},
+        ],
+    },
+    "cypher": {
+        "id": "cypher",
+        "name": "Text-to-Cypher / Symbolic Query",
+        "shortName": "Cypher",
+        "subtitle": "question -> auditable Cypher pattern -> graph rows/docs -> synthesis",
+        "description": "Mostra a familia em que a pergunta vira consulta simbolica. Aqui usamos uma template deterministica segura; a aba Graph tem geracao por LLM para demonstrar text-to-Cypher.",
+        "graph": "symbolic_query_template",
+        "text": "documents_queried_by_mentions",
+        "synthesis": "query_result_with_text",
+        "scoreFormula": "score = entityHits from Cypher + small rank prior; no vector cosine",
+        "flow": ["pergunta", "entidades", "Cypher read-only", "linhas/docs", "sintese"],
+        "risk": "A qualidade depende da query gerada e do schema conhecido pelo modelo.",
+        "references": [
+            {"label": "Microsoft GraphRAG Local Search", "url": "https://microsoft.github.io/graphrag/query/local_search/"},
+            {"label": "Neo4j Cypher Manual", "url": "https://neo4j.com/docs/cypher-manual/current/"},
+        ],
+    },
+}
+
+
 class GraphRAG:
     def __init__(
         self,
@@ -32,13 +147,43 @@ class GraphRAG:
         mode: str = "graph",
         model: str | None = None,
         use_llm: bool = True,
+        graph_rag_strategy: str = "kg_index",
     ) -> dict[str, Any]:
         mode = self.normalize_mode(mode)
+        graph_rag_strategy = self.normalize_graph_rag_strategy(graph_rag_strategy)
         entity_matches = self.resolve_entity_matches(question)
         entities = [match["name"] for match in entity_matches]
-        graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180) if mode in {"graph", "hybrid"} else {}
-        documents = self.retrieve_text(question, entities, graph, mode, limit=top_k) if mode in {"rag", "hybrid"} else []
-        context_sections = self.build_context_sections(question, entities, graph, documents, hops=hops, mode=mode)
+        strategy_runtime: dict[str, Any] = {
+            "strategy": graph_rag_strategy if mode == "hybrid" else mode,
+            "graphSeeds": entities,
+            "derivedEntities": [],
+            "pathEntities": [],
+            "communityEntities": [],
+            "notes": [],
+        }
+        if mode == "rag":
+            graph = {}
+            documents = self.retrieve_text(question, entities, graph, mode, limit=top_k)
+        elif mode == "graph":
+            graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
+            documents = []
+        else:
+            graph, documents, strategy_runtime = self.retrieve_graphrag(
+                question=question,
+                entities=entities,
+                hops=hops,
+                top_k=top_k,
+                strategy=graph_rag_strategy,
+            )
+        context_sections = self.build_context_sections(
+            question,
+            entities,
+            graph,
+            documents,
+            hops=hops,
+            mode=mode,
+            strategy_runtime=strategy_runtime,
+        )
         context = context_sections["selected"]
         documents_by_source = self.documents_by_source(documents)
         trace = self.build_trace(
@@ -50,6 +195,7 @@ class GraphRAG:
             hops=hops,
             top_k=top_k,
             mode=mode,
+            strategy_runtime=strategy_runtime,
         )
 
         if not use_llm:
@@ -61,6 +207,7 @@ class GraphRAG:
                 "topK": top_k,
                 "topKPerSource": top_k if mode == "rag" else None,
                 "mode": mode,
+                "graphRagStrategy": graph_rag_strategy if mode == "hybrid" else None,
                 "context": context,
                 "textContext": context_sections["text"],
                 "graphContext": context_sections["graph"],
@@ -100,6 +247,7 @@ class GraphRAG:
             "topK": top_k,
             "topKPerSource": top_k if mode == "rag" else None,
             "mode": mode,
+            "graphRagStrategy": graph_rag_strategy if mode == "hybrid" else None,
             "context": context,
             "textContext": context_sections["text"],
             "graphContext": context_sections["graph"],
@@ -121,15 +269,51 @@ class GraphRAG:
         top_k: int = 8,
         model: str | None = None,
         use_llm: bool = False,
+        graph_rag_strategy: str = "kg_index",
     ) -> dict[str, Any]:
         modes = ["rag", "graph", "hybrid"]
         return {
             "question": question,
             "hops": hops,
             "topK": top_k,
+            "graphRagStrategy": self.normalize_graph_rag_strategy(graph_rag_strategy),
             "results": {
-                mode: self.answer(question, hops=hops, top_k=top_k, mode=mode, model=model, use_llm=use_llm)
+                mode: self.answer(
+                    question,
+                    hops=hops,
+                    top_k=top_k,
+                    mode=mode,
+                    model=model,
+                    use_llm=use_llm,
+                    graph_rag_strategy=graph_rag_strategy,
+                )
                 for mode in modes
+            },
+        }
+
+    def compare_graphrag_strategies(
+        self,
+        question: str,
+        hops: int = 2,
+        top_k: int = 8,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "question": question,
+            "hops": hops,
+            "topK": top_k,
+            "strategies": self.strategy_catalog(),
+            "results": {
+                strategy: self.answer(
+                    question,
+                    hops=hops,
+                    top_k=top_k,
+                    mode="hybrid",
+                    model=model,
+                    use_llm=False,
+                    graph_rag_strategy=strategy,
+                )
+                for strategy in GRAPH_RAG_STRATEGY_ORDER
             },
         }
 
@@ -142,16 +326,312 @@ class GraphRAG:
         return mode
 
     @staticmethod
+    def normalize_graph_rag_strategy(strategy: str | None) -> str:
+        if not strategy:
+            return "kg_index"
+        clean = str(strategy).strip().lower().replace("-", "_")
+        aliases = {
+            "hybrid": "kg_index",
+            "boost": "kg_index",
+            "kg": "kg_index",
+            "filter": "graph_filter",
+            "paths": "path",
+            "path_connector": "path",
+            "local_global": "community",
+            "global": "community",
+            "text2cypher": "cypher",
+            "text_to_cypher": "cypher",
+            "query": "cypher",
+        }
+        clean = aliases.get(clean, clean)
+        return clean if clean in GRAPH_RAG_STRATEGIES else "kg_index"
+
+    @staticmethod
+    def strategy_catalog() -> list[dict[str, Any]]:
+        return [dict(GRAPH_RAG_STRATEGIES[key]) for key in GRAPH_RAG_STRATEGY_ORDER]
+
+    def retrieve_graphrag(
+        self,
+        question: str,
+        entities: list[str],
+        hops: int,
+        top_k: int,
+        strategy: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+        strategy = self.normalize_graph_rag_strategy(strategy)
+        runtime: dict[str, Any] = {
+            "strategy": strategy,
+            "graphSeeds": entities,
+            "derivedEntities": [],
+            "pathEntities": [],
+            "communityEntities": [],
+            "queryEntities": [],
+            "notes": [],
+        }
+
+        if strategy == "vector_first":
+            seed_docs = self.retrieve_text_ranked(
+                question,
+                entities=[],
+                graph={},
+                mode="rag",
+                limit=max(top_k, 12),
+                apply_boost=False,
+            )
+            derived_entities = self.ranked_mentions(seed_docs, limit=8)
+            graph_seeds = self.unique_names([*entities, *derived_entities])
+            graph = self.neo4j.subgraph_for_seeds(graph_seeds, hops=hops, limit=180)
+            runtime.update(
+                {
+                    "graphSeeds": graph_seeds,
+                    "derivedEntities": derived_entities,
+                    "notes": ["O grafo foi expandido depois dos primeiros hits vetoriais."],
+                }
+            )
+            return graph, self.tag_documents(seed_docs[:top_k], "vector_first"), runtime
+
+        if strategy == "community":
+            graph = self.neo4j.community_subgraph_for_seeds(entities, limit=180)
+            if not graph.get("nodes"):
+                graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
+            community_entities = self.top_graph_node_names(graph, limit=28)
+            runtime.update(
+                {
+                    "graphSeeds": entities,
+                    "communityEntities": community_entities,
+                    "notes": ["A comunidade estrutural substitui a expansao k-hop comum."],
+                }
+            )
+            docs = self.retrieve_text_ranked(
+                question,
+                entities=entities,
+                graph=graph,
+                mode="hybrid",
+                limit=max(top_k * 6, 36),
+                apply_boost=True,
+            )
+            docs = self.rerank_by_mentions(docs, entities, community_entities, "community", seed_pair_bonus=False)
+            return graph, self.tag_documents(docs[:top_k], "community"), runtime
+
+        graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
+
+        if strategy == "graph_filter":
+            linked_entities = self.top_graph_node_names(graph, limit=64)
+            runtime.update(
+                {
+                    "graphSeeds": entities,
+                    "derivedEntities": linked_entities[:12],
+                    "notes": ["Documentos sem mencao ao subgrafo sao descartados depois da busca vetorial."],
+                }
+            )
+            candidates = self.retrieve_text_ranked(
+                question,
+                entities=entities,
+                graph=graph,
+                mode="hybrid",
+                limit=max(top_k * 10, 48),
+                apply_boost=True,
+            )
+            docs = self.filter_docs_by_mentions(candidates, [*entities, *linked_entities])
+            if len(docs) < top_k:
+                docs = self.merge_documents(
+                    docs,
+                    self.entity_documents([*entities, *linked_entities[:24]], question, method="graph_filter_mentions", limit=top_k),
+                )
+            return graph, self.tag_documents(docs[:top_k], "graph_filter"), runtime
+
+        if strategy == "path":
+            path_entities = self.path_entity_names(entities, graph)
+            runtime.update(
+                {
+                    "graphSeeds": entities,
+                    "pathEntities": path_entities,
+                    "notes": ["Caminhos curtos e conectores 2-hop recebem peso extra no reranking."],
+                }
+            )
+            candidates = self.retrieve_text_ranked(
+                question,
+                entities=entities,
+                graph=graph,
+                mode="hybrid",
+                limit=max(top_k * 10, 48),
+                apply_boost=True,
+            )
+            docs = self.rerank_by_mentions(candidates, entities, path_entities, "path", seed_pair_bonus=True)
+            if len(self.filter_docs_by_mentions(docs, path_entities)) >= max(2, top_k // 3):
+                docs = self.filter_docs_by_mentions(docs, [*entities, *path_entities]) or docs
+            return graph, self.tag_documents(docs[:top_k], "path"), runtime
+
+        if strategy == "cypher":
+            query_entities = entities or self.top_graph_node_names(graph, limit=4)
+            runtime.update(
+                {
+                    "graphSeeds": entities,
+                    "queryEntities": query_entities,
+                    "notes": ["A consulta simbolica usa MENTIONS como ponte entre entidades e documentos."],
+                }
+            )
+            docs = self.entity_documents(query_entities, question, method="cypher_mentions", limit=top_k)
+            if not docs:
+                docs = self.retrieve_text_ranked(
+                    question,
+                    entities=entities,
+                    graph=graph,
+                    mode="hybrid",
+                    limit=top_k,
+                    apply_boost=True,
+                )
+            return graph, self.tag_documents(docs[:top_k], "cypher"), runtime
+
+        docs = self.retrieve_text_ranked(
+            question,
+            entities=entities,
+            graph=graph,
+            mode="hybrid",
+            limit=top_k,
+            apply_boost=True,
+        )
+        runtime["notes"] = ["Estrategia padrao: subgrafo k-hop reforca o ranking vetorial."]
+        return graph, self.tag_documents(docs, "kg_index"), runtime
+
+    @staticmethod
+    def unique_names(names: list[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for name in names:
+            if name and name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
+
+    @staticmethod
+    def ranked_mentions(documents: list[dict[str, Any]], limit: int = 8) -> list[str]:
+        counts: Counter[str] = Counter()
+        for doc in documents:
+            for name in doc.get("mentions") or []:
+                counts[name] += 1
+        return [name for name, _count in counts.most_common(limit)]
+
+    @staticmethod
+    def top_graph_node_names(graph: dict[str, Any], limit: int = 32) -> list[str]:
+        nodes = graph.get("nodes") or []
+        ranked = sorted(
+            [node for node in nodes if node.get("name")],
+            key=lambda node: (
+                -(float(node.get("pagerank") or 0.0)),
+                -(float(node.get("weightedDegree") or 0.0)),
+                str(node.get("name") or ""),
+            ),
+        )
+        return [str(node["name"]) for node in ranked[:limit]]
+
+    def path_entity_names(self, entities: list[str], graph: dict[str, Any]) -> list[str]:
+        names: list[str] = []
+        for path in self.shortest_paths(entities, limit=4):
+            names.extend(path.get("path") or [])
+        names.extend(row["name"] for row in self.connector_rows(entities, graph.get("edges") or [], limit=8))
+        return self.unique_names([*entities, *names])
+
+    @staticmethod
+    def filter_docs_by_mentions(documents: list[dict[str, Any]], names: list[str]) -> list[dict[str, Any]]:
+        wanted = set(names)
+        return [doc for doc in documents if set(doc.get("mentions") or []) & wanted]
+
+    @staticmethod
+    def merge_documents(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for group in groups:
+            for doc in group:
+                key = str(doc.get("id") or len(seen))
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(doc)
+        return merged
+
+    def entity_documents(
+        self,
+        names: list[str],
+        question: str,
+        method: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        docs = self.neo4j.documents_for_entities(self.unique_names(names), limit=max(limit, 1))
+        query_tokens = tokenize(question)
+        for idx, doc in enumerate(docs, start=1):
+            entity_hits = int(doc.get("entityHits") or 0)
+            doc["sourceRank"] = idx
+            doc["sourceBucket"] = doc.get("sourceType") or "other"
+            doc["score"] = float(entity_hits) + max(0.0, 1.0 - idx / (limit + 2))
+            doc["vectorScore"] = None
+            doc["graphBoost"] = float(entity_hits)
+            doc["retrievalMethod"] = method
+            doc["snippet"] = snippet(str(doc.get("text") or ""), query_tokens, max_chars=780)
+        return docs
+
+    @staticmethod
+    def rerank_by_mentions(
+        documents: list[dict[str, Any]],
+        seed_entities: list[str],
+        focus_entities: list[str],
+        strategy: str,
+        seed_pair_bonus: bool,
+    ) -> list[dict[str, Any]]:
+        seed_set = set(seed_entities)
+        focus_set = set(focus_entities)
+        reranked: list[dict[str, Any]] = []
+        for doc in documents:
+            mentions = set(doc.get("mentions") or [])
+            focus_hits = mentions & focus_set
+            seed_hits = mentions & seed_set
+            extra = len(focus_hits) * 0.04
+            if seed_pair_bonus and len(seed_hits) >= 2:
+                extra += 0.06
+            enriched = dict(doc)
+            enriched["score"] = float(enriched.get("score") or 0.0) + extra
+            enriched["graphBoost"] = float(enriched.get("graphBoost") or 0.0) + extra
+            enriched["strategyFocusHits"] = sorted(focus_hits)
+            enriched["strategyMethod"] = strategy
+            reranked.append(enriched)
+        reranked.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+        return reranked
+
+    @staticmethod
+    def tag_documents(documents: list[dict[str, Any]], strategy: str) -> list[dict[str, Any]]:
+        tagged: list[dict[str, Any]] = []
+        for idx, doc in enumerate(documents, start=1):
+            enriched = dict(doc)
+            enriched["sourceRank"] = idx
+            enriched["strategyMethod"] = strategy
+            base_method = str(enriched.get("retrievalMethod") or "retrieval")
+            if strategy not in base_method:
+                enriched["retrievalMethod"] = f"{base_method}+{strategy}"
+            tagged.append(enriched)
+        return tagged
+
+    @staticmethod
     def retrieval_summary(documents: list[dict[str, Any]]) -> dict[str, Any]:
         methods = sorted({doc.get("retrievalMethod") or "unknown" for doc in documents})
         by_source = Counter(doc.get("sourceType") or "other" for doc in documents)
         has_boost = any(float(doc.get("graphBoost") or 0.0) > 0 for doc in documents)
         has_vector = any(doc.get("vectorScore") is not None for doc in documents)
+        has_symbolic = any("cypher" in str(doc.get("retrievalMethod") or "") for doc in documents)
+        if has_vector and has_boost:
+            score_mode = "cosine+graph-boost"
+        elif has_vector:
+            score_mode = "cosine"
+        elif has_symbolic:
+            score_mode = "symbolic entity hits"
+        elif documents:
+            score_mode = "bm25"
+        else:
+            score_mode = "none"
         return {
             "method": methods[0] if len(methods) == 1 else ("+".join(methods) if methods else "none"),
             "documents": len(documents),
             "bySource": dict(sorted(by_source.items())),
-            "scoreMode": "cosine+graph-boost" if has_boost else ("cosine" if has_vector else ("bm25" if documents else "none")),
+            "scoreMode": score_mode,
             "topScore": float(documents[0].get("score") or 0.0) if documents else 0.0,
             "topVectorScore": documents[0].get("vectorScore") if documents else None,
         }
@@ -175,8 +655,11 @@ class GraphRAG:
         hops: int,
         top_k: int,
         mode: str,
+        strategy_runtime: dict[str, Any],
     ) -> dict[str, Any]:
         entities = [match["name"] for match in entity_matches]
+        strategy_id = self.normalize_graph_rag_strategy(strategy_runtime.get("strategy") if mode == "hybrid" else None)
+        strategy = dict(GRAPH_RAG_STRATEGIES[strategy_id])
         edges = graph.get("edges") or []
         nodes = graph.get("nodes") or []
         relationship_counts = Counter(edge.get("type") or "UNKNOWN" for edge in edges)
@@ -188,29 +671,36 @@ class GraphRAG:
 
         return {
             "variant": {
-                "name": "Hybrid Vector + Graph",
-                "subtitle": "entity grounding -> k-hop subgraph -> vector retrieval with graph boost -> LLM synthesis",
+                "id": strategy_id,
+                "name": strategy["name"] if mode == "hybrid" else ("RAG textual" if mode == "rag" else "Graph-only"),
+                "shortName": strategy["shortName"] if mode == "hybrid" else mode,
+                "subtitle": strategy["subtitle"] if mode == "hybrid" else "modo nao-hibrido",
+                "description": strategy["description"] if mode == "hybrid" else "",
                 "active": mode == "hybrid",
-                "implemented": [
-                    "Graph as structural context",
-                    "Hybrid vector + graph reranking",
-                ],
-                "notImplemented": [
-                    "LLM-generated Cypher",
-                    "LLM-as-KG-builder during question answering",
-                ],
+                "flow": strategy["flow"] if mode == "hybrid" else [],
+                "risk": strategy["risk"] if mode == "hybrid" else "",
+                "references": strategy["references"] if mode == "hybrid" else [],
+                "implemented": [strategy["graph"], strategy["text"], strategy["synthesis"]] if mode == "hybrid" else [],
+                "notImplemented": [],
             },
             "strategy": {
                 "mode": mode,
-                "graph": "deterministic_k_hop" if mode in {"graph", "hybrid"} else "disabled",
-                "text": "vector_similarity_plus_graph_boost" if mode == "hybrid" else ("pure_vector_similarity" if mode == "rag" else "disabled"),
-                "synthesis": "ollama_or_retrieval_only",
-                "scoreFormula": "final = cosine + 0.08*seed_mentions + 0.015*subgraph_mentions_capped_8 + 0.08_if_two_seed_mentions",
+                "graphRagStrategy": strategy_id if mode == "hybrid" else None,
+                "graph": strategy["graph"] if mode == "hybrid" else ("deterministic_k_hop" if mode == "graph" else "disabled"),
+                "text": strategy["text"] if mode == "hybrid" else ("pure_vector_similarity" if mode == "rag" else "disabled"),
+                "synthesis": strategy["synthesis"] if mode == "hybrid" else "ollama_or_retrieval_only",
+                "scoreFormula": strategy["scoreFormula"] if mode == "hybrid" else "n/a",
+                "runtime": strategy_runtime,
             },
             "grounding": {
                 "question": question,
                 "entities": entity_matches,
                 "entityCount": len(entity_matches),
+                "graphSeeds": strategy_runtime.get("graphSeeds") or entities,
+                "derivedEntities": strategy_runtime.get("derivedEntities") or [],
+                "pathEntities": strategy_runtime.get("pathEntities") or [],
+                "communityEntities": strategy_runtime.get("communityEntities") or [],
+                "queryEntities": strategy_runtime.get("queryEntities") or [],
             },
             "graph": {
                 "hops": hops,
@@ -220,7 +710,7 @@ class GraphRAG:
                 "paths": paths,
                 "directEdges": direct_edges,
                 "connectors": connectors,
-                "query": self.graph_query_trace(entities, hops),
+                "query": self.graph_query_trace(entities, hops, strategy_id, strategy_runtime),
             },
             "retrieval": {
                 **self.retrieval_summary(documents),
@@ -252,8 +742,16 @@ class GraphRAG:
             },
             "steps": [
                 {"id": "grounding", "label": "Grounding", "value": f"{len(entity_matches)} entidades"},
-                {"id": "graph", "label": "Subgrafo k-hop", "value": f"{len(nodes)} nos / {len(edges)} arestas"},
-                {"id": "retrieval", "label": "Reranking", "value": f"{len(documents)} docs / {len(boosted_documents)} boosted"},
+                {
+                    "id": "graph",
+                    "label": strategy["shortName"] if mode == "hybrid" else "Subgrafo",
+                    "value": f"{len(nodes)} nos / {len(edges)} arestas",
+                },
+                {
+                    "id": "retrieval",
+                    "label": "Evidencias",
+                    "value": f"{len(documents)} docs / {len(boosted_documents)} boosted",
+                },
                 {"id": "prompt", "label": "Prompt", "value": f"~{max(1, len(context) // 4) if context else 0} tokens"},
             ],
         }
@@ -287,12 +785,89 @@ class GraphRAG:
             "mentions": sorted(mentions),
             "seedHits": seed_hits,
             "graphHits": graph_hits[:8],
+            "strategyFocusHits": sorted(doc.get("strategyFocusHits") or []),
+            "strategyMethod": doc.get("strategyMethod"),
             "boostReason": reason,
             "snippet": doc.get("snippet") or doc.get("text") or "",
         }
 
     @staticmethod
-    def graph_query_trace(entities: list[str], hops: int) -> dict[str, Any]:
+    def graph_query_trace(
+        entities: list[str],
+        hops: int,
+        strategy: str = "kg_index",
+        strategy_runtime: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        strategy_runtime = strategy_runtime or {}
+        if strategy == "community":
+            return {
+                "label": "community subgraph selection",
+                "parameters": {"seeds": entities, "limit": 180},
+                "cypher": (
+                    "MATCH (seed:Character)\n"
+                    "WHERE seed.name IN $seeds AND seed.community IS NOT NULL\n"
+                    "WITH collect(DISTINCT seed.community) AS communities\n"
+                    "MATCH p = (a:Character)-[r]-(b:Character)\n"
+                    "WHERE a.community IN communities AND b.community = a.community\n"
+                    "RETURN p ORDER BY coalesce(r.weight, r.confidence, 1) DESC LIMIT $limit"
+                ),
+            }
+        if strategy == "cypher":
+            return {
+                "label": "symbolic MENTIONS query",
+                "parameters": {"entities": strategy_runtime.get("queryEntities") or entities, "limit": 180},
+                "cypher": (
+                    "MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)\n"
+                    "WHERE e.name IN $entities\n"
+                    "WITH d, count(DISTINCT e) AS entityHits\n"
+                    "OPTIONAL MATCH (d)-[:MENTIONS]->(m:Entity)\n"
+                    "RETURN d.id, d.sourceTitle, entityHits, collect(DISTINCT m.name) AS mentions\n"
+                    "ORDER BY entityHits DESC, d.sequence LIMIT $limit"
+                ),
+            }
+        if strategy == "vector_first":
+            return {
+                "label": "vector-derived k-hop expansion",
+                "parameters": {"seeds": strategy_runtime.get("graphSeeds") or entities, "hops": hops, "limit": 180},
+                "cypher": (
+                    "/* seeds come from entities mentioned by initial vector hits */\n"
+                    "MATCH (seed:Entity)\n"
+                    "WHERE seed.name IN $seeds\n"
+                    f"MATCH p = (seed)-[*1..{max(1, min(int(hops), 4))}]-(n:Entity)\n"
+                    "RETURN nodes(p) AS nodes, relationships(p) AS rels LIMIT $limit"
+                ),
+            }
+        if strategy == "path":
+            return {
+                "label": "shortest paths + 2-hop connectors",
+                "parameters": {
+                    "seeds": entities,
+                    "source": entities[0] if entities else None,
+                    "target": entities[1] if len(entities) > 1 else None,
+                    "pathEntities": strategy_runtime.get("pathEntities") or [],
+                    "limit": 180,
+                },
+                "cypher": (
+                    "MATCH (a:Entity {name: $source})\n"
+                    "MATCH (b:Entity {name: $target})\n"
+                    "MATCH p = shortestPath((a)-[*..5]-(b))\n"
+                    "RETURN p, [n IN nodes(p) | n.name] AS path"
+                ),
+            }
+        if strategy == "graph_filter":
+            return {
+                "label": "k-hop expansion + strict MENTIONS filter",
+                "parameters": {"seeds": entities, "hops": hops, "limit": 180},
+                "cypher": (
+                    "MATCH (seed:Entity)\n"
+                    "WHERE seed.name IN $seeds\n"
+                    f"MATCH p = (seed)-[*1..{max(1, min(int(hops), 4))}]-(n:Entity)\n"
+                    "WITH collect(DISTINCT n.name) + $seeds AS graphNames\n"
+                    "MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)\n"
+                    "WHERE e.name IN graphNames\n"
+                    "RETURN d, count(DISTINCT e) AS graphHits ORDER BY graphHits DESC LIMIT $limit"
+                ),
+            }
         if not entities:
             return {
                 "label": "global fallback",
@@ -364,7 +939,7 @@ class GraphRAG:
         hops: int,
         mode: str,
     ) -> str:
-        return self.build_context_sections(question, entities, graph, documents, hops, mode)["selected"]
+        return self.build_context_sections(question, entities, graph, documents, hops, mode, {})["selected"]
 
     def build_context_sections(
         self,
@@ -374,10 +949,20 @@ class GraphRAG:
         documents: list[dict[str, Any]],
         hops: int,
         mode: str,
+        strategy_runtime: dict[str, Any] | None = None,
     ) -> dict[str, str]:
-        text_context = self.build_text_context(question, documents, mode=mode) if mode in {"rag", "hybrid"} else ""
+        strategy_runtime = strategy_runtime or {}
+        text_context = (
+            self.build_text_context(question, documents, mode=mode, strategy_runtime=strategy_runtime)
+            if mode in {"rag", "hybrid"}
+            else ""
+        )
         graph_context = self.build_graph_context(question, entities, graph, hops=hops) if mode in {"graph", "hybrid"} else ""
-        hybrid_context = self.build_hybrid_context(question, text_context, graph_context) if mode == "hybrid" else ""
+        hybrid_context = (
+            self.build_hybrid_context(question, text_context, graph_context, strategy_runtime)
+            if mode == "hybrid"
+            else ""
+        )
         selected = {
             "rag": text_context,
             "graph": graph_context,
@@ -390,15 +975,24 @@ class GraphRAG:
             "hybrid": hybrid_context,
         }
 
-    def build_text_context(self, question: str, documents: list[dict[str, Any]], mode: str) -> str:
+    def build_text_context(
+        self,
+        question: str,
+        documents: list[dict[str, Any]],
+        mode: str,
+        strategy_runtime: dict[str, Any] | None = None,
+    ) -> str:
+        strategy_runtime = strategy_runtime or {}
+        strategy_id = self.normalize_graph_rag_strategy(strategy_runtime.get("strategy") if mode == "hybrid" else None)
+        strategy = GRAPH_RAG_STRATEGIES[strategy_id]
         lines: list[str] = []
         lines.append(f"Pergunta: {question}")
         if mode == "rag":
             lines.append("Modo de retrieval: rag textual puro")
             lines.append("Score: similaridade textual apenas.")
         elif mode == "hybrid":
-            lines.append("Modo de retrieval: texto para GraphRAG")
-            lines.append("Score: similaridade textual com reforco de entidades ativadas pelo subgrafo.")
+            lines.append(f"Modo de retrieval: GraphRAG / {strategy['name']}")
+            lines.append(f"Score: {strategy['scoreFormula']}")
         else:
             lines.append("Modo de retrieval: texto")
 
@@ -481,12 +1075,24 @@ class GraphRAG:
         return "\n".join(lines)
 
     @staticmethod
-    def build_hybrid_context(question: str, text_context: str, graph_context: str) -> str:
+    def build_hybrid_context(
+        question: str,
+        text_context: str,
+        graph_context: str,
+        strategy_runtime: dict[str, Any] | None = None,
+    ) -> str:
+        strategy_runtime = strategy_runtime or {}
+        strategy_id = GraphRAG.normalize_graph_rag_strategy(strategy_runtime.get("strategy"))
+        strategy = GRAPH_RAG_STRATEGIES[strategy_id]
+        notes = strategy_runtime.get("notes") or []
         return "\n\n".join(
             [
                 f"Pergunta: {question}",
-                "Modo de retrieval: GraphRAG hibrido",
-                "A evidencia estrutural identifica entidades, caminhos e vizinhos; a evidencia textual sustenta a resposta.",
+                f"Modo de retrieval: GraphRAG / {strategy['name']}",
+                f"Definicao da variante: {strategy['description']}",
+                f"Fluxo: {' -> '.join(strategy['flow'])}",
+                f"Risco interpretativo: {strategy['risk']}",
+                *([f"Notas da execucao: {'; '.join(notes)}"] if notes else []),
                 "=== Evidencia estrutural ===",
                 graph_context,
                 "=== Evidencia textual ===",

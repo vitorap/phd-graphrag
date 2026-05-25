@@ -12,7 +12,7 @@ from neo4j.exceptions import Neo4jError
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.graphrag import GraphRAG
+from app.graphrag import GRAPH_RAG_STRATEGIES, GRAPH_RAG_STRATEGY_ORDER, GraphRAG
 from app.neo4j_client import Neo4jClient
 from app.ollama_client import OllamaClient
 from app.vector_store import VectorStore
@@ -29,6 +29,7 @@ class AskRequest(BaseModel):
     hops: int = Field(2, ge=1, le=4)
     top_k: int = Field(8, ge=1, le=24)
     mode: str = Field("hybrid", pattern="^(rag|graph|hybrid|baseline)$")
+    graph_rag_strategy: str = Field("kg_index", pattern="^(kg_index|vector_first|graph_filter|path|community|cypher)$")
     model: str | None = None
     use_llm: bool = False
 
@@ -956,6 +957,15 @@ def lecture() -> dict[str, Any]:
     return {"steps": LECTURE_STEPS}
 
 
+@app.get("/api/graphrag/strategies")
+def graphrag_strategies() -> dict[str, Any]:
+    return {
+        "default": "kg_index",
+        "order": GRAPH_RAG_STRATEGY_ORDER,
+        "strategies": [GRAPH_RAG_STRATEGIES[key] for key in GRAPH_RAG_STRATEGY_ORDER],
+    }
+
+
 @app.post("/api/ask")
 def ask(payload: AskRequest) -> dict[str, Any]:
     client = Neo4jClient()
@@ -968,6 +978,7 @@ def ask(payload: AskRequest) -> dict[str, Any]:
             mode=payload.mode,
             model=payload.model,
             use_llm=payload.use_llm,
+            graph_rag_strategy=payload.graph_rag_strategy,
         )
     finally:
         client.close()
@@ -984,6 +995,22 @@ def compare(payload: AskRequest) -> dict[str, Any]:
             top_k=payload.top_k,
             model=payload.model,
             use_llm=payload.use_llm,
+            graph_rag_strategy=payload.graph_rag_strategy,
+        )
+    finally:
+        client.close()
+
+
+@app.post("/api/graphrag/compare")
+def compare_graphrag_strategies(payload: AskRequest) -> dict[str, Any]:
+    client = Neo4jClient()
+    try:
+        rag = GraphRAG(client, OllamaClient(model=payload.model))
+        return rag.compare_graphrag_strategies(
+            payload.question,
+            hops=payload.hops,
+            top_k=payload.top_k,
+            model=payload.model,
         )
     finally:
         client.close()

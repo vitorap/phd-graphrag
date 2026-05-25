@@ -81,6 +81,7 @@ make seed         # importa e enriquece o grafo no Neo4j
 make vectors      # gera embeddings e indice vetorial local
 make stats        # mostra estatisticas do grafo
 make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
+make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid STRATEGY=path
 make ask Q="Como Frodo se conecta a Sauron?" MODE=rag
 make ask Q="Como Frodo se conecta a Sauron?" MODE=graph
 make compare Q="Qual a relação de Frodo com Sauron?"
@@ -126,6 +127,7 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
    - Mostrar RAG vetorial: bom para narrativa, sem estrutura explicita.
    - Mostrar Graph: bom para caminho/vizinhanca, mas pobre em explicacao.
    - Mostrar GraphRAG: entidades + subgrafo + chunks ligados ao subgrafo.
+   - Na aba GraphRAG, alternar estrategias: `KG-as-Index`, `Vector-first`, `Graph filter`, `Paths`, `Community` e `Cypher`.
    - Alterar `hops=1`, `hops=2`, `hops=3`.
    - Ligar a chave `Sintese com LLM` apenas quando o modelo ja estiver preaquecido.
 
@@ -193,6 +195,19 @@ LIMIT 10;
 - **Docker-first**: parceiro consegue rodar com os mesmos comandos.
 - **RAG vetorial local**: embeddings gerados no Ollama com `nomic-embed-text:latest` e cosine similarity em um indice persistido simples.
 - **BM25 como fallback**: se o indice vetorial ainda nao existir, a demo ainda recupera evidencias textuais sem travar.
+
+## Estrategias GraphRAG Implementadas
+
+A aba **GraphRAG** nao trata GraphRAG como uma tecnica unica. Ela permite selecionar e comparar seis familias:
+
+- `kg_index`: entidades da pergunta abrem subgrafo k-hop; o subgrafo da boost no ranking vetorial.
+- `vector_first`: busca vetorial primeiro; entidades dos chunks recuperados expandem o grafo depois.
+- `graph_filter`: subgrafo vira filtro duro; so ficam documentos ligados por `MENTIONS`.
+- `path`: caminhos curtos e conectores 2-hop recebem peso extra no reranking.
+- `community`: comunidade estrutural dos personagens aproxima a ideia local-to-global.
+- `cypher`: template simbolica read-only mostra a familia text-to-Cypher/query-driven.
+
+Referencias usadas na UI: Microsoft GraphRAG Local/Global Search, From Local to Global GraphRAG, GRAG, KG2RAG, LightRAG, HippoRAG e GNN-RAG.
 
 ## Perguntas Centrais para Fechar com o Professor/Turma
 

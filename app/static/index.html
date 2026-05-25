@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-graph-workbench" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-strategies" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -125,6 +125,21 @@
                 <option value="graph">Graph</option>
               </select>
             </label>
+          </section>
+
+          <section class="control-block graphrag-controls" aria-label="Estrategia GraphRAG">
+            <label class="field">
+              <span>Estrategia GraphRAG</span>
+              <select id="graphRagStrategyInput">
+                <option value="kg_index">KG-as-Index / Graph Boost</option>
+                <option value="vector_first">Vector-first Graph Expansion</option>
+                <option value="graph_filter">Graph-Constrained Retrieval</option>
+                <option value="path">Path / Connector Retrieval</option>
+                <option value="community">Community / Local-to-Global</option>
+                <option value="cypher">Text-to-Cypher / Symbolic Query</option>
+              </select>
+            </label>
+            <p class="control-note">Cada estrategia muda onde o grafo entra: antes, depois, como filtro, como caminho, como comunidade ou como query.</p>
           </section>
 
           <section class="control-block graph-controls" aria-label="Modo centro e saltos">
@@ -249,11 +264,11 @@
             <div class="view-head">
               <div>
                 <h2>Graph Workbench</h2>
-                <p>Cypher read-only com subgrafo real da query, centro/hops e sintese estrutural.</p>
+                <p>Consultas read-only que retornam tabela, subgrafo e leitura estrutural.</p>
               </div>
               <div class="button-row graph-head-actions">
-                <button class="secondary-button" id="synthesizeGraphButton" type="button" disabled>Sintetizar Grafo</button>
-                <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
+                <button class="primary-button" id="runCypherButton" type="button">Executar Query</button>
+                <button class="secondary-button" id="synthesizeGraphButton" type="button" disabled>Executar + Explicar</button>
               </div>
             </div>
             <article class="graph-lesson" id="graphLesson">
@@ -278,13 +293,16 @@
             </article>
             <div class="graph-workbench">
               <aside class="query-rail">
-                <h3>Exemplos</h3>
+                <div class="query-rail-head">
+                  <h3>Exemplos de aula</h3>
+                  <span>Selecionar executa a query e atualiza o grafo</span>
+                </div>
                 <div id="cypherExamples" class="query-list"></div>
               </aside>
               <section class="query-editor">
                 <label class="field">
                   <span>Descreva a consulta</span>
-                  <textarea id="cypherPromptInput" rows="3">relacoes entre elfos e orcs</textarea>
+                  <textarea id="cypherPromptInput" rows="4">relacoes entre elfos e orcs</textarea>
                 </label>
                 <div class="button-row">
                   <button class="secondary-button" id="generateCypherButton" type="button">Gerar Cypher</button>
@@ -301,7 +319,7 @@
                 <div id="cypherResults" class="table-wrap"></div>
                 <article class="graph-synthesis" id="graphSynthesis">
                   <strong>Leitura Graph-only</strong>
-                  <p>Rode uma query que retorne <code>p</code> ou <code>a, r, b</code> para sintetizar a estrutura.</p>
+                  <p><code>Executar + Explicar</code> roda a query e sintetiza apenas a estrutura recuperada.</p>
                 </article>
               </section>
             </div>
@@ -310,21 +328,23 @@
           <section class="view" id="view-graphrag">
             <div class="view-head">
               <div>
-                <h2>GraphRAG Trace</h2>
-                <p>Auditoria do fluxo: pergunta, entidades, subgrafo, reranking vetorial e prompt final.</p>
+                <h2>GraphRAG Strategies</h2>
+                <p>Seis formas auditaveis de acoplar grafo, texto e LLM no retrieval.</p>
               </div>
-              <button class="primary-button" id="hybridButton" type="button">Executar GraphRAG</button>
+              <div class="button-row">
+                <button class="secondary-button" id="strategyCompareButton" type="button">Comparar estrategias</button>
+                <button class="primary-button" id="hybridButton" type="button">Executar GraphRAG</button>
+              </div>
             </div>
-            <div class="trace-method-grid">
-              <article class="trace-method-card">
-                <span>Variante ativa</span>
-                <h3>Hybrid Vector + Graph</h3>
-                <p>O grafo entra antes da sintese: entidades ativam um subgrafo k-hop e esse subgrafo reforca os chunks vetoriais que mencionam seus nos.</p>
-              </article>
-              <article class="trace-method-card">
-                <span>O que ainda nao e</span>
-                <h3>Sem Cypher gerado por LLM</h3>
-                <p>A estrategia atual usa query deterministica. Quando o modulo text-to-Cypher estiver pronto, ele entra como outra estrategia de grafo.</p>
+            <div class="strategy-layout">
+              <section class="strategy-card-grid" id="graphRagStrategyCards"></section>
+              <article class="active-strategy-panel">
+                <span id="activeStrategyKicker">Variante ativa</span>
+                <h3 id="activeStrategyName">KG-as-Index / Graph Boost</h3>
+                <p id="activeStrategyDescription">O grafo funciona como indice estrutural para reforcar evidencias textuais.</p>
+                <div class="architecture-flow" id="activeStrategyFlow"></div>
+                <div class="strategy-risk" id="activeStrategyRisk"></div>
+                <div class="strategy-references" id="activeStrategyReferences"></div>
               </article>
             </div>
             <div class="pipeline-board trace-steps" id="pipelineBoard">
@@ -364,6 +384,15 @@
               <div id="tracePromptSections" class="trace-prompt-sections"></div>
               <pre id="tracePromptPreview"></pre>
             </details>
+            <section class="trace-panel strategy-compare-panel">
+              <div class="trace-panel-head">
+                <h3>Comparacao entre estrategias GraphRAG</h3>
+                <span>retrieval-only para nao mascarar diferencas</span>
+              </div>
+              <div id="strategyCompareResults" class="strategy-compare-grid">
+                <article class="trace-doc-empty">Clique em Comparar estrategias para ver como cada variante muda grafo, documentos e score.</article>
+              </div>
+            </section>
           </section>
 
           <section class="view" id="view-compare">

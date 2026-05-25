@@ -4,6 +4,7 @@ Q ?= Como Frodo se conecta a Sauron?
 HOPS ?= 2
 TOP_K ?= 8
 MODE ?= hybrid
+STRATEGY ?= kg_index
 MODEL ?= qwen3.6:latest
 EMBED_MODEL ?= nomic-embed-text:latest
 NUM_CTX ?= 16384
@@ -19,7 +20,7 @@ help:
 	@printf "make seed     Importa o grafo hibrido no Neo4j\n"
 	@printf "make vectors  Gera embeddings e indice vetorial. Use EMBED_MODEL=nomic-embed-text:latest\n"
 	@printf "make stats    Mostra estatisticas do grafo\n"
-	@printf "make ask      Pergunta via CLI. Use Q=\"...\" MODE=hybrid HOPS=2 TOP_K=8 MODEL=qwen3.6:latest\n"
+	@printf "make ask      Pergunta via CLI. Use Q=\"...\" MODE=hybrid STRATEGY=kg_index HOPS=2 TOP_K=8\n"
 	@printf "make compare  Compara RAG vetorial, Graph e GraphRAG. Use Q=\"...\" HOPS=2 TOP_K=8\n"
 	@printf "make ollama-pull-embed  Baixa modelo local de embedding para RAG vetorial\n"
 	@printf "make ollama-show  Mostra metadados do modelo local\n"
@@ -55,7 +56,7 @@ stats:
 	docker compose run --rm app python scripts/stats.py
 
 ask:
-	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/ask.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)" --mode "$(MODE)"
+	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/ask.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)" --mode "$(MODE)" --strategy "$(STRATEGY)"
 
 compare:
 	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/compare.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)"

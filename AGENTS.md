@@ -109,7 +109,13 @@ Relacoes principais:
 - `rag` usa embeddings Ollama + cosine similarity sobre `RetrievalDocument`.
 - BM25 existe apenas como fallback quando o indice vetorial ainda nao foi gerado ou o modelo de embedding falha.
 - `graph` usa entidades, subgrafo k-hop, caminhos e vizinhos.
-- `hybrid` usa o subgrafo para orientar e reforcar a busca vetorial em chunks/falas ligados por `MENTIONS`.
+- `hybrid` usa uma estrategia GraphRAG selecionavel:
+  - `kg_index`: subgrafo k-hop da boost no ranking vetorial.
+  - `vector_first`: RAG vetorial primeiro, grafo expandido pelas mencoes recuperadas.
+  - `graph_filter`: subgrafo como filtro duro de documentos ligados por `MENTIONS`.
+  - `path`: caminhos/conectores como foco do reranking.
+  - `community`: comunidade estrutural como contexto local-to-global.
+  - `cypher`: consulta simbolica por entidades/documentos como familia text-to-query.
 
 ## Validacao Antes de Finalizar
 

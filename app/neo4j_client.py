@@ -246,6 +246,58 @@ class Neo4jClient:
             ).single()
         return self._with_layout(row["nodes"] if row else [], row["edges"] if row else [])
 
+    def community_subgraph_for_seeds(self, seeds: list[str], limit: int = 180) -> dict[str, Any]:
+        seeds = [seed for seed in seeds if seed]
+        if not seeds:
+            return self.global_graph(limit=limit)
+        with self.driver.session() as session:
+            row = session.run(
+                """
+                MATCH (seed:Character)
+                WHERE seed.name IN $seeds AND seed.community IS NOT NULL
+                WITH collect(DISTINCT seed.community) AS communities, collect(seed) AS seedNodes
+                MATCH (a:Character)-[r]-(b:Character)
+                WHERE a.community IN communities
+                  AND b.community = a.community
+                  AND type(r) IN ['INTERACTS_WITH', 'CO_OCCURS_WITH', 'FRIEND_OF', 'ENEMY_OF', 'PREDICTED_LINK']
+                  AND (type(r) <> 'PREDICTED_LINK' OR coalesce(r.confidence, 0) >= 0.25)
+                WITH seedNodes, a, r, b
+                ORDER BY coalesce(r.weight, r.confidence, 1) DESC, coalesce(a.pagerank, 0) DESC
+                LIMIT $limit
+                WITH seedNodes, collect(DISTINCT r) AS rels, collect(DISTINCT a) + collect(DISTINCT b) AS communityNodes
+                WITH rels, seedNodes + communityNodes AS rawNodes
+                UNWIND rawNodes AS n
+                WITH collect(DISTINCT n) AS nodes, rels
+                RETURN
+                  [n IN nodes | {
+                    id: elementId(n),
+                    name: n.name,
+                    labels: labels(n),
+                    kind: n.kind,
+                    race: n.race,
+                    gender: n.gender,
+                    pagerank: n.pagerank,
+                    community: n.community,
+                    weightedDegree: n.weightedDegree
+                  }] AS nodes,
+                  [r IN rels | {
+                    id: elementId(r),
+                    source: elementId(startNode(r)),
+                    target: elementId(endNode(r)),
+                    sourceName: startNode(r).name,
+                    targetName: endNode(r).name,
+                    type: type(r),
+                    weight: coalesce(r.weight, 1),
+                    confidence: r.confidence,
+                    method: r.method,
+                    sourceDataset: r.sourceDataset
+                  }] AS edges
+                """,
+                seeds=seeds,
+                limit=limit,
+            ).single()
+        return self._with_layout(row["nodes"] if row else [], row["edges"] if row else [])
+
     def shortest_path(self, source: str, target: str, max_depth: int = 5) -> list[str]:
         max_depth = max(1, min(int(max_depth), 6))
         with self.driver.session() as session:

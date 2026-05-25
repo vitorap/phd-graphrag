@@ -21,6 +21,12 @@ def main() -> int:
     parser.add_argument("--hops", type=int, default=2, help="profundidade k-hop")
     parser.add_argument("--top-k", type=int, default=8, help="numero de evidencias textuais recuperadas")
     parser.add_argument("--mode", default="hybrid", choices=["rag", "graph", "hybrid", "baseline"], help="modo de retrieval")
+    parser.add_argument(
+        "--strategy",
+        default="kg_index",
+        choices=["kg_index", "vector_first", "graph_filter", "path", "community", "cypher"],
+        help="estrategia GraphRAG quando --mode=hybrid",
+    )
     parser.add_argument("--no-llm", action="store_true", help="mostra so contexto recuperado")
     parser.add_argument("--json", action="store_true", help="imprime JSON completo")
     args = parser.parse_args()
@@ -34,6 +40,7 @@ def main() -> int:
             top_k=args.top_k,
             mode=args.mode,
             use_llm=not args.no_llm,
+            graph_rag_strategy=args.strategy,
         )
         client.close()
     except Exception as exc:
