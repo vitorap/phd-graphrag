@@ -877,14 +877,10 @@ function renderGraphRagStrategies() {
   graphRagStrategyCards.innerHTML = state.graphRagStrategies
     .map(
       (strategy) => `
-        <button class="strategy-card ${strategy.id === state.activeGraphRagStrategy ? "active" : ""}" data-strategy-id="${escapeHtml(strategy.id)}" type="button">
+        <button class="strategy-card ${strategy.id === state.activeGraphRagStrategy ? "active" : ""}" data-strategy-id="${escapeHtml(strategy.id)}" type="button" aria-pressed="${strategy.id === state.activeGraphRagStrategy ? "true" : "false"}">
           <span>${escapeHtml(strategy.shortName || strategy.id)}</span>
           <strong>${escapeHtml(strategy.name)}</strong>
-          <p>${escapeHtml(strategy.description)}</p>
-          <div class="strategy-card-meta">
-            <small>${escapeHtml(strategy.graphRole || "grafo como contexto")}</small>
-            <small>${escapeHtml(strategy.visualHint || (strategy.flow || []).join(" -> "))}</small>
-          </div>
+          <small>${escapeHtml((strategy.flow || []).slice(0, 3).join(" -> ") || strategy.graph || "retrieval")}</small>
         </button>
       `,
     )
@@ -899,7 +895,7 @@ function renderActiveGraphRagStrategy() {
   const strategy = strategyById(state.activeGraphRagStrategy);
   if (graphRagStrategyInput && graphRagStrategyInput.value !== strategy.id) graphRagStrategyInput.value = strategy.id;
   if (!activeStrategyName) return;
-  activeStrategyKicker.textContent = "Variante ativa";
+  activeStrategyKicker.textContent = `${strategy.shortName || "Variante"} selecionada`;
   activeStrategyName.textContent = strategy.name;
   activeStrategyDescription.textContent = strategy.description;
   activeStrategyStageMap.innerHTML = (strategy.stageDetails || [])
@@ -918,7 +914,7 @@ function renderActiveGraphRagStrategy() {
   activeStrategyTextRole.textContent = strategy.textRole || "O texto sustenta a resposta com evidencias recuperadas.";
   activeStrategyLectureCue.textContent = strategy.lectureCue || "Use a variante para contrastar onde o grafo entra no pipeline.";
   activeStrategyVisualHint.textContent = strategy.visualHint ? `No trace: ${strategy.visualHint}` : "";
-  activeStrategyRisk.textContent = strategy.risk ? `Risco: ${strategy.risk}` : "";
+  activeStrategyRisk.textContent = strategy.risk || "";
   activeStrategyReferences.innerHTML = (strategy.references || [])
     .map((reference) => {
       const label = Array.isArray(reference) ? reference[0] : reference.label;
@@ -928,6 +924,7 @@ function renderActiveGraphRagStrategy() {
     .join("");
   graphRagStrategyCards?.querySelectorAll("[data-strategy-id]").forEach((button) => {
     button.classList.toggle("active", button.dataset.strategyId === strategy.id);
+    button.setAttribute("aria-pressed", button.dataset.strategyId === strategy.id ? "true" : "false");
   });
 }
 

@@ -1468,37 +1468,47 @@ th {
 
 .strategy-layout {
   display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
-  margin-bottom: 12px;
+  gap: 10px;
+  grid-template-columns: 1fr;
+  margin-bottom: 10px;
 }
 
 .strategy-card-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 231, 0.9), rgba(231, 217, 183, 0.62));
+  border: 1px solid rgba(140, 117, 63, 0.32);
+  border-radius: var(--radius-lg);
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 8px;
 }
 
 .strategy-card {
   background:
-    linear-gradient(180deg, rgba(255, 250, 231, 0.95), rgba(231, 217, 183, 0.78));
-  border: 1px solid rgba(140, 117, 63, 0.36);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--inner-shadow);
+    linear-gradient(180deg, rgba(255, 247, 223, 0.94), rgba(231, 217, 183, 0.72));
+  border: 1px solid rgba(140, 117, 63, 0.28);
+  border-radius: var(--radius-md);
+  box-shadow: none;
   cursor: pointer;
   display: grid;
-  gap: 7px;
-  min-height: 190px;
-  padding: 12px;
-  text-align: left;
-  transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+  flex: 1 0 132px;
+  gap: 4px;
+  min-height: 64px;
+  padding: 9px 10px;
+  text-align: center;
+  transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out), background 160ms var(--ease-out);
 }
 
 .strategy-card:hover,
 .strategy-card.active {
-  border-color: rgba(189, 138, 43, 0.78);
-  box-shadow: 0 14px 30px rgba(51, 39, 20, 0.16);
-  transform: translateY(-2px);
+  background:
+    linear-gradient(180deg, rgba(35, 91, 69, 0.98), rgba(18, 61, 46, 0.94));
+  border-color: rgba(224, 193, 106, 0.72);
+  box-shadow: 0 10px 22px rgba(18, 38, 31, 0.18);
+  color: var(--paper);
+  transform: translateY(-1px);
 }
 
 .strategy-card span,
@@ -1510,10 +1520,19 @@ th {
   text-transform: uppercase;
 }
 
+.strategy-card.active span,
+.strategy-card.active strong,
+.strategy-card.active small,
+.strategy-card:hover span,
+.strategy-card:hover strong,
+.strategy-card:hover small {
+  color: #fff7df;
+}
+
 .strategy-card strong,
 .active-strategy-panel h3 {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.12;
 }
 
@@ -1521,72 +1540,97 @@ th {
 .active-strategy-panel p,
 .strategy-risk {
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.42;
+  font-size: 13px;
+  line-height: 1.48;
   margin: 0;
 }
 
-.strategy-card-meta {
-  display: grid;
-  gap: 6px;
-  margin-top: auto;
-}
-
 .strategy-card small {
-  background: rgba(18, 61, 46, 0.07);
-  border: 1px solid rgba(18, 61, 46, 0.12);
-  border-radius: var(--radius-sm);
-  color: var(--green-dark);
+  color: var(--muted);
+  display: block;
   font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 850;
+  font-size: 10px;
+  font-weight: 800;
   line-height: 1.25;
-  padding: 6px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .active-strategy-panel {
   background:
-    radial-gradient(circle at 20% 0%, rgba(189, 138, 43, 0.22), transparent 34%),
-    linear-gradient(180deg, rgba(35, 57, 44, 0.96), rgba(18, 38, 31, 0.94));
-  border: 1px solid rgba(218, 185, 111, 0.44);
+    radial-gradient(circle at 84% 0%, rgba(189, 138, 43, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(255, 250, 231, 0.97), rgba(239, 230, 204, 0.9));
+  border: 1px solid rgba(140, 117, 63, 0.34);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 34px rgba(18, 38, 31, 0.2);
-  color: var(--paper);
+  box-shadow: var(--inner-shadow);
+  color: var(--ink);
   display: grid;
-  gap: 11px;
-  padding: 14px;
+  gap: 12px;
+  padding: 16px;
+}
+
+.active-strategy-head {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
 }
 
 .active-strategy-panel h3 {
-  color: #fff7df;
-  font-size: 22px;
+  color: var(--green-dark);
+  font-size: clamp(24px, 2.4vw, 34px);
   margin: 0;
+}
+
+.active-strategy-panel > span,
+.active-strategy-head span {
+  color: var(--gold-dark);
 }
 
 .active-strategy-panel p,
 .active-strategy-panel .strategy-risk {
-  color: rgba(255, 247, 223, 0.82);
+  color: var(--muted);
+}
+
+.active-strategy-description {
+  border-bottom: 1px solid rgba(140, 117, 63, 0.24);
+  color: var(--ink) !important;
+  font-size: 16px !important;
+  line-height: 1.52 !important;
+  padding-bottom: 10px;
+}
+
+.strategy-focus-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+.strategy-flow-panel {
+  display: grid;
+  gap: 10px;
 }
 
 .strategy-stage-map {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .strategy-stage-map article {
-  background: rgba(255, 247, 223, 0.1);
-  border: 1px solid rgba(255, 247, 223, 0.18);
+  background: rgba(35, 91, 69, 0.08);
+  border: 1px solid rgba(31, 107, 75, 0.18);
   border-radius: var(--radius-md);
   display: grid;
   gap: 4px;
-  min-height: 104px;
-  padding: 9px;
+  min-height: 118px;
+  padding: 11px;
   position: relative;
 }
 
 .strategy-stage-map article:not(:last-child)::after {
-  color: rgba(255, 247, 223, 0.52);
+  color: rgba(31, 107, 75, 0.56);
   content: "->";
   font-family: var(--font-ui);
   font-size: 13px;
@@ -1598,8 +1642,8 @@ th {
 
 .strategy-stage-map strong {
   align-items: center;
-  background: rgba(224, 193, 106, 0.18);
-  border: 1px solid rgba(224, 193, 106, 0.24);
+  background: rgba(18, 61, 46, 0.96);
+  border: 1px solid rgba(224, 193, 106, 0.36);
   border-radius: 999px;
   color: #fff7df;
   display: inline-flex;
@@ -1612,7 +1656,7 @@ th {
 
 .strategy-stage-map span,
 .strategy-explain-grid span {
-  color: #fff7df;
+  color: var(--gold-dark);
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 900;
@@ -1620,56 +1664,62 @@ th {
 }
 
 .strategy-stage-map p {
-  color: rgba(255, 247, 223, 0.74);
-  font-size: 11px;
-  line-height: 1.35;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.42;
 }
 
 .strategy-explain-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .strategy-explain-grid article {
-  background: rgba(255, 247, 223, 0.08);
-  border: 1px solid rgba(255, 247, 223, 0.16);
+  background: rgba(255, 247, 223, 0.76);
+  border: 1px solid rgba(140, 117, 63, 0.24);
   border-radius: var(--radius-md);
   display: grid;
   gap: 5px;
-  min-height: 92px;
-  padding: 10px;
+  min-height: 78px;
+  padding: 10px 11px;
 }
 
 .strategy-explain-grid p {
-  font-size: 12px;
-  line-height: 1.4;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .strategy-visual-hint {
-  background: rgba(224, 193, 106, 0.13);
-  border: 1px solid rgba(224, 193, 106, 0.24);
+  background: rgba(18, 61, 46, 0.94);
+  border: 1px solid rgba(224, 193, 106, 0.32);
   border-radius: var(--radius-md);
-  color: rgba(255, 247, 223, 0.88);
-  font-size: 12px;
-  line-height: 1.4;
-  padding: 9px 10px;
+  color: #fff7df;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 11px 12px;
 }
 
 .strategy-risk {
-  border-left: 3px solid var(--gold);
-  padding-left: 9px;
+  padding-left: 0;
+}
+
+.strategy-risk-card {
+  border-left: 4px solid var(--gold) !important;
 }
 
 .strategy-references {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  justify-content: flex-end;
+  min-width: min(280px, 100%);
 }
 
 .strategy-references a {
-  background: rgba(255, 247, 223, 0.1);
-  border: 1px solid rgba(255, 247, 223, 0.18);
+  background: rgba(18, 61, 46, 0.92);
+  border: 1px solid rgba(224, 193, 106, 0.28);
   border-radius: 999px;
   color: #fff7df;
   font-family: var(--font-ui);
@@ -2750,13 +2800,12 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .strategy-card-grid,
   .strategy-compare-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .strategy-stage-map {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   #graphSvg {
@@ -2833,10 +2882,10 @@ code {
   .pipeline-board,
   .trace-method-grid,
   .strategy-layout,
-  .strategy-card-grid,
   .strategy-compare-grid,
   .strategy-stage-map,
   .strategy-explain-grid,
+  .strategy-focus-layout,
   .trace-grid,
   .trace-doc-list,
   .trace-prompt-sections,
@@ -2848,6 +2897,12 @@ code {
   .lecture-info-grid,
   .lecture-question-card {
     grid-template-columns: 1fr;
+  }
+
+  .strategy-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
   }
 
   .trace-row {

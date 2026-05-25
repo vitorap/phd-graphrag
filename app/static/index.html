@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-variant-audit" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-layout-focus" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -347,33 +347,44 @@
               </div>
             </div>
             <div class="strategy-layout">
-              <section class="strategy-card-grid" id="graphRagStrategyCards"></section>
+              <section class="strategy-card-grid" id="graphRagStrategyCards" aria-label="Variantes GraphRAG"></section>
               <article class="active-strategy-panel">
-                <span id="activeStrategyKicker">Variante ativa</span>
-                <h3 id="activeStrategyName">KG-as-Index / Graph Boost</h3>
-                <p id="activeStrategyDescription">O grafo funciona como indice estrutural para reforcar evidencias textuais.</p>
-                <div class="strategy-stage-map" id="activeStrategyStageMap"></div>
-                <div class="strategy-explain-grid">
-                  <article>
-                    <span>Quando usar</span>
-                    <p id="activeStrategyBestFor"></p>
-                  </article>
-                  <article>
-                    <span>Papel do grafo</span>
-                    <p id="activeStrategyGraphRole"></p>
-                  </article>
-                  <article>
-                    <span>Evidencia textual</span>
-                    <p id="activeStrategyTextRole"></p>
-                  </article>
-                  <article>
-                    <span>Gancho de aula</span>
-                    <p id="activeStrategyLectureCue"></p>
-                  </article>
+                <header class="active-strategy-head">
+                  <div>
+                    <span id="activeStrategyKicker">Variante ativa</span>
+                    <h3 id="activeStrategyName">KG-as-Index / Graph Boost</h3>
+                  </div>
+                  <div class="strategy-references" id="activeStrategyReferences"></div>
+                </header>
+                <p id="activeStrategyDescription" class="active-strategy-description">O grafo funciona como indice estrutural para reforcar evidencias textuais.</p>
+                <div class="strategy-focus-layout">
+                  <section class="strategy-flow-panel" aria-label="Pipeline da variante selecionada">
+                    <div class="strategy-stage-map" id="activeStrategyStageMap"></div>
+                    <div class="strategy-visual-hint" id="activeStrategyVisualHint"></div>
+                  </section>
+                  <section class="strategy-explain-grid" aria-label="Detalhes da variante selecionada">
+                    <article>
+                      <span>Quando usar</span>
+                      <p id="activeStrategyBestFor"></p>
+                    </article>
+                    <article>
+                      <span>Papel do grafo</span>
+                      <p id="activeStrategyGraphRole"></p>
+                    </article>
+                    <article>
+                      <span>Evidencia textual</span>
+                      <p id="activeStrategyTextRole"></p>
+                    </article>
+                    <article>
+                      <span>Gancho de aula</span>
+                      <p id="activeStrategyLectureCue"></p>
+                    </article>
+                    <article class="strategy-risk-card">
+                      <span>Risco</span>
+                      <p id="activeStrategyRisk"></p>
+                    </article>
+                  </section>
                 </div>
-                <div class="strategy-visual-hint" id="activeStrategyVisualHint"></div>
-                <div class="strategy-risk" id="activeStrategyRisk"></div>
-                <div class="strategy-references" id="activeStrategyReferences"></div>
               </article>
             </div>
             <div class="pipeline-board trace-steps" id="pipelineBoard">
@@ -529,6 +540,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-graphrag-variant-audit"></script>
+    <script src="/static/app.js?v=20260525-graphrag-layout-focus"></script>
   </body>
 </html>
