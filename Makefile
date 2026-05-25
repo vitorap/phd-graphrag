@@ -10,7 +10,7 @@ EMBED_MODEL ?= nomic-embed-text:latest
 NUM_CTX ?= 16384
 TIMEOUT ?= 60
 
-.PHONY: help up down reset build data seed vectors stats ask compare app neo4j logs ps shell smoke smoke-vectors bootstrap ollama-list ollama-show ollama-warm ollama-pull-embed
+.PHONY: help up down reset build data seed vectors stats ask compare app neo4j logs ps shell smoke smoke-vectors smoke-strategies bootstrap ollama-list ollama-show ollama-warm ollama-pull-embed
 
 help:
 	@printf "\nGraphRAG em Middle-earth\n"
@@ -29,6 +29,7 @@ help:
 	@printf "make neo4j    Mostra URL e credenciais do Neo4j Browser\n"
 	@printf "make logs     Acompanha logs do app e Neo4j\n"
 	@printf "make smoke    Roda um teste rapido de ponta a ponta\n"
+	@printf "make smoke-strategies  Valida invariantes das seis variantes GraphRAG. Requer make vectors\n"
 	@printf "make reset    Remove containers e volumes\n\n"
 
 build:
@@ -97,5 +98,8 @@ smoke:
 
 smoke-vectors:
 	docker compose run --rm -e OLLAMA_EMBED_MODEL="$(EMBED_MODEL)" -e VECTOR_DIR=/tmp/phd-graphrag-smoke-vectors app sh -c 'python scripts/build_vectors.py --model "$(EMBED_MODEL)" --limit 16 && python scripts/ask.py "Como Frodo se conecta a Sauron?" --hops 2 --mode rag --no-llm'
+
+smoke-strategies:
+	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/validate_graphrag_strategies.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)"
 
 bootstrap: ollama-pull-embed up data seed vectors stats

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-variant-nav" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graphrag-variant-audit" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -132,11 +132,11 @@
               <span>Estrategia GraphRAG</span>
               <select id="graphRagStrategyInput">
                 <option value="kg_index">KG-as-Index / Graph Boost</option>
-                <option value="vector_first">Vector-first Graph Expansion</option>
+                <option value="vector_first">Vector-first / Graph Expansion</option>
                 <option value="graph_filter">Graph-Constrained Retrieval</option>
                 <option value="path">Path / Connector Retrieval</option>
                 <option value="community">Community / Local-to-Global</option>
-                <option value="cypher">Text-to-Cypher / Symbolic Query</option>
+                <option value="cypher">Symbolic Cypher / MENTIONS Query</option>
               </select>
             </label>
             <p class="control-note">Cada estrategia muda onde o grafo entra: antes, depois, como filtro, como caminho, como comunidade ou como query.</p>
@@ -529,6 +529,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-graphrag-variant-nav"></script>
+    <script src="/static/app.js?v=20260525-graphrag-variant-audit"></script>
   </body>
 </html>

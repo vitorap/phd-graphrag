@@ -107,6 +107,7 @@ const COLORS = {
   place: "#bd8a2b",
   language: "#3c5f94",
   race: "#6f5aa8",
+  document: "#b35f2d",
   entity: "#64736b",
 };
 
@@ -166,7 +167,7 @@ const GRAPH_RAG_STRATEGIES = [
   {
     id: "vector_first",
     shortName: "Vector-first",
-    name: "Vector-first Graph Expansion",
+    name: "Vector-first / Graph Expansion",
     description:
       "Comeca com RAG vetorial puro; as entidades dos chunks recuperados viram sementes para expandir o grafo depois.",
     flow: ["embedding", "top-k", "mencoes", "grafo", "sintese"],
@@ -192,7 +193,7 @@ const GRAPH_RAG_STRATEGIES = [
     shortName: "Graph filter",
     name: "Graph-Constrained Retrieval",
     description:
-      "O subgrafo vira filtro: so ficam chunks/falas que mencionam entidades ativadas pela vizinhanca estrutural.",
+      "O subgrafo vira filtro duro dentro da busca vetorial: so entram chunks/falas que mencionam entidades ativadas pela vizinhanca estrutural.",
     flow: ["entidades", "subgrafo", "filtro", "rerank", "sintese"],
     stageDetails: [
       ["Grounding", "Entidades ativam um subgrafo."],
@@ -262,10 +263,10 @@ const GRAPH_RAG_STRATEGIES = [
   {
     id: "cypher",
     shortName: "Cypher",
-    name: "Text-to-Cypher / Symbolic Query",
+    name: "Symbolic Cypher / MENTIONS Query",
     description:
-      "A pergunta vira uma consulta simbolica auditavel; aqui a demo usa template segura e a aba Graph mostra geracao por LLM.",
-    flow: ["pergunta", "entidades", "Cypher", "linhas/docs", "sintese"],
+      "Entidades da pergunta alimentam uma consulta simbolica auditavel; aqui a demo usa template segura e a aba Graph mostra geracao por LLM.",
+    flow: ["entidades", "Cypher", "linhas/docs", "grafo MENTIONS", "sintese"],
     stageDetails: [
       ["Entidades", "Nomes viram parametros da query."],
       ["Cypher", "Consulta simbolica busca via MENTIONS."],
@@ -275,9 +276,9 @@ const GRAPH_RAG_STRATEGIES = [
     bestFor: "Perguntas que podem virar consulta clara por entidades, relacoes ou documentos ligados.",
     graphRole: "Plano simbolico e auditavel.",
     textRole: "Docs entram por MENTIONS; embedding nao decide o ranking principal.",
-    lectureCue: "Conecta a aba Graph com text-to-Cypher.",
+    lectureCue: "Conecta a aba Graph com query-driven GraphRAG.",
     visualHint: "Trace deve mostrar symbolic entity hits e a Cypher equivalente.",
-    risk: "Excelente para auditoria, mas depende do schema e da qualidade da query.",
+    risk: "Excelente para auditoria, mas depende do entity grounding e do template escolhido.",
     references: [
       ["Neo4j Cypher", "https://neo4j.com/docs/cypher-manual/current/"],
       ["GraphRAG Local Search", "https://microsoft.github.io/graphrag/query/local_search/"],
@@ -1032,6 +1033,7 @@ function renderGraphRagTrace(result) {
   const retrieval = trace.retrieval || {};
   const prompt = trace.prompt || {};
   const variant = trace.variant || {};
+  const runtime = trace.strategy?.runtime || {};
   const steps = trace.steps || [];
   const stepById = steps.reduce((lookup, step) => {
     lookup[step.id] = step;
@@ -1075,14 +1077,80 @@ function renderGraphRagTrace(result) {
     .slice(0, 5)
     .map(([name, count]) => `${name} ${count}`)
     .join(" · ");
-  traceGraphMeta.textContent = `${graph.nodeCount || 0} nos · ${graph.edgeCount || 0} arestas · hops ${graph.hops || hopsInput.value}`;
+  const graphMetaSuffix = (variant.id || state.activeGraphRagStrategy) === "cypher"
+    ? "query MENTIONS"
+    : `hops ${graph.hops || hopsInput.value}`;
+  traceGraphMeta.textContent = `${graph.nodeCount || 0} nos · ${graph.edgeCount || 0} arestas · ${graphMetaSuffix}`;
   const paths = graph.paths || [];
   const directEdges = graph.directEdges || [];
   const connectors = graph.connectors || [];
+  const runtimeNotes = runtime.notes || trace.strategy?.notes || [];
+  const runtimeStatus = runtime.degraded
+    ? `fallback para ${runtime.fallbackStrategy || "estrategia alternativa"}`
+    : "execucao principal";
+  const isSymbolicQuery = (variant.id || state.activeGraphRagStrategy) === "cypher";
+  const graphSeedText =
+    [
+      ...new Set(
+        [
+          ...(grounding.graphSeeds || []),
+          ...(grounding.derivedEntities || []),
+          ...(grounding.pathEntities || []),
+          ...(grounding.communityEntities || []).slice(0, 6),
+          ...(grounding.queryEntities || []),
+        ].filter(Boolean),
+      ),
+    ]
+      .slice(0, 14)
+      .join(", ") || "sem sementes adicionais";
+  const relationalRows = isSymbolicQuery
+    ? `
+      <div class="trace-row">
+        <strong>Padrao</strong>
+        <span>RetrievalDocument -[:MENTIONS]-&gt; Entity</span>
+      </div>
+      <div class="trace-row">
+        <strong>Resultado</strong>
+        <span>${retrieval.documents || 0} documentos ranqueados por entityHits; embedding nao decide este ranking.</span>
+      </div>
+    `
+    : `
+      <div class="trace-row">
+        <strong>Caminhos</strong>
+        <span>${
+          paths.length
+            ? paths.map((item) => escapeHtml(`${item.source} -> ${item.target}: ${item.path.join(" -> ")}`)).join("<br>")
+            : "sem caminho curto"
+        }</span>
+      </div>
+      <div class="trace-row">
+        <strong>Diretas</strong>
+        <span>${
+          directEdges.length
+            ? directEdges
+                .slice(0, 4)
+                .map((edge) => escapeHtml(`${edge.sourceName} -[${edge.type}]-> ${edge.targetName}`))
+                .join("<br>")
+            : "sem aresta direta entre seeds"
+        }</span>
+      </div>
+      <div class="trace-row">
+        <strong>Conectores</strong>
+        <span>${
+          connectors.length
+            ? connectors.map((item) => escapeHtml(`${item.name} (${Number(item.combinedWeight || 0).toFixed(0)})`)).join(", ")
+            : "sem conectores 2-hop"
+        }</span>
+      </div>
+    `;
   traceGraphEvidence.innerHTML = `
     <div class="trace-row">
       <strong>Variante</strong>
       <span>${escapeHtml(variant.name || "GraphRAG")}<br>${escapeHtml(variant.subtitle || "")}</span>
+    </div>
+    <div class="trace-row">
+      <strong>Status</strong>
+      <span>${escapeHtml(runtimeStatus)}${runtimeNotes.length ? `<br>${escapeHtml(runtimeNotes.join(" "))}` : ""}</span>
     </div>
     <div class="trace-row">
       <strong>Uso</strong>
@@ -1100,42 +1168,10 @@ function renderGraphRagTrace(result) {
       <strong>Tipos</strong>
       <span>${escapeHtml(relTypes || "sem arestas recuperadas")}</span>
     </div>
-    <div class="trace-row">
-      <strong>Caminhos</strong>
-      <span>${
-        paths.length
-          ? paths.map((item) => escapeHtml(`${item.source} -> ${item.target}: ${item.path.join(" -> ")}`)).join("<br>")
-          : "sem caminho curto"
-      }</span>
-    </div>
-    <div class="trace-row">
-      <strong>Diretas</strong>
-      <span>${
-        directEdges.length
-          ? directEdges
-              .slice(0, 4)
-              .map((edge) => escapeHtml(`${edge.sourceName} -[${edge.type}]-> ${edge.targetName}`))
-              .join("<br>")
-          : "sem aresta direta entre seeds"
-      }</span>
-    </div>
-    <div class="trace-row">
-      <strong>Conectores</strong>
-      <span>${
-        connectors.length
-          ? connectors.map((item) => escapeHtml(`${item.name} (${Number(item.combinedWeight || 0).toFixed(0)})`)).join(", ")
-          : "sem conectores 2-hop"
-      }</span>
-    </div>
+    ${relationalRows}
     <div class="trace-row">
       <strong>Sementes</strong>
-      <span>${escapeHtml([
-        ...(grounding.graphSeeds || []),
-        ...(grounding.derivedEntities || []),
-        ...(grounding.pathEntities || []),
-        ...(grounding.communityEntities || []).slice(0, 6),
-        ...(grounding.queryEntities || []),
-      ].filter(Boolean).slice(0, 14).join(", ") || "sem sementes adicionais")}</span>
+      <span>${escapeHtml(graphSeedText)}</span>
     </div>
     <div class="trace-row">
       <strong>Sinal visual</strong>
@@ -1307,6 +1343,7 @@ function renderStrategyCompare(results) {
       const graph = trace.graph || {};
       const retrieval = trace.retrieval || {};
       const grounding = trace.grounding || {};
+      const runtime = trace.strategy?.runtime || {};
       const topDoc = (retrieval.topDocuments || [])[0];
       const topDocText = topDoc
         ? `${sourceLabel(topDoc.sourceType)} · ${topDoc.sourceTitle || "texto"} · ${scoreLabel(topDoc)}`
@@ -1330,6 +1367,7 @@ function renderStrategyCompare(results) {
           <p><strong>Papel:</strong> ${escapeHtml(strategy.graphRole || "")}</p>
           <p><strong>Sementes:</strong> ${escapeHtml(seedText)}</p>
           <p><strong>Score:</strong> ${escapeHtml(retrieval.scoreMode || "n/a")}</p>
+          <p><strong>Status:</strong> ${escapeHtml(runtime.degraded ? `fallback ${runtime.fallbackStrategy || ""}` : "principal")}</p>
           <p><strong>Top evidencia:</strong> ${escapeHtml(topDocText)}</p>
           <button class="secondary-button compact-strategy-button" data-open-strategy="${escapeHtml(strategyId)}" type="button">Ver detalhes</button>
         </article>

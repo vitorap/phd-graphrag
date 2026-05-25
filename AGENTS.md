@@ -111,11 +111,11 @@ Relacoes principais:
 - `graph` usa entidades, subgrafo k-hop, caminhos e vizinhos.
 - `hybrid` usa uma estrategia GraphRAG selecionavel:
   - `kg_index`: subgrafo k-hop da boost no ranking vetorial.
-  - `vector_first`: RAG vetorial primeiro, grafo expandido pelas mencoes recuperadas.
-  - `graph_filter`: subgrafo como filtro duro de documentos ligados por `MENTIONS`.
-  - `path`: caminhos/conectores como foco do reranking.
-  - `community`: comunidade estrutural como contexto local-to-global.
-  - `cypher`: consulta simbolica por entidades/documentos como familia text-to-query.
+  - `vector_first`: RAG vetorial puro primeiro, grafo expandido apenas pelas mencoes recuperadas; fallback deve ser explicitado.
+  - `graph_filter`: subgrafo como filtro duro dentro da busca vetorial para documentos ligados por `MENTIONS`.
+  - `path`: caminhos/conectores como foco do reranking; deve degradar para `kg_index` se nao houver par/caminho/conector real.
+  - `community`: comunidade estrutural como contexto local-to-global; fallback para k-hop deve aparecer no trace.
+  - `cypher`: consulta simbolica deterministica por entidades/documentos via `MENTIONS`; geracao livre de Cypher fica na aba Graph.
 
 ## Validacao Antes de Finalizar
 
@@ -127,6 +127,7 @@ make data
 make seed
 make vectors
 make stats
+make smoke-strategies
 make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
 make compare Q="Qual a relação de Frodo com Sauron?"
 ```

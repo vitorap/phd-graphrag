@@ -53,14 +53,14 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
     },
     "vector_first": {
         "id": "vector_first",
-        "name": "Vector-first Graph Expansion",
+        "name": "Vector-first / Graph Expansion",
         "shortName": "Vector-first",
-        "subtitle": "vector retrieval -> mentions -> graph expansion -> synthesis",
+        "subtitle": "vector retrieval -> mentions from hits -> graph expansion -> synthesis",
         "description": "Comeca como RAG comum. Depois usa as entidades mencionadas nos chunks recuperados para abrir o grafo e explicar conexoes que o texto sozinho nao mostra.",
         "graph": "expanded_from_vector_hits",
         "text": "pure_vector_similarity",
         "synthesis": "text_then_graph_context",
-        "scoreFormula": "final = cosine; graph is added after retrieval for explanation",
+        "scoreFormula": "final = cosine; graph is added after retrieval from retrieved mentions",
         "flow": ["embedding", "top-k textual", "entidades dos chunks", "subgrafo", "sintese"],
         "stageDetails": [
             {"label": "Busca inicial", "detail": "A pergunta vai primeiro para o indice vetorial puro."},
@@ -116,7 +116,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "graph": "shortest_paths_and_connectors",
         "text": "vector_similarity_plus_path_entity_boost",
         "synthesis": "path_explanation_with_text",
-        "scoreFormula": "final = cosine+graph_boost + 0.04*path_entity_mentions + 0.06_if_seed_pair_seen",
+        "scoreFormula": "requires >=2 grounded entities; final = cosine+seed_boost+path_focus_boost+0.06_if_seed_pair_seen",
         "flow": ["pares de entidades", "shortest path", "conectores", "chunks com ponte", "sintese"],
         "stageDetails": [
             {"label": "Pares", "detail": "Entidades detectadas formam pares relacionais."},
@@ -144,7 +144,7 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "graph": "seed_community_subgraph",
         "text": "vector_similarity_plus_community_entity_boost",
         "synthesis": "community_context_plus_text",
-        "scoreFormula": "final = cosine + boost for mentions of seed/community entities",
+        "scoreFormula": "final = cosine + boost/rerank for mentions of seed/community entities",
         "flow": ["entidades", "comunidade", "nos centrais", "evidencias representativas", "sintese"],
         "stageDetails": [
             {"label": "Comunidade", "detail": "Sementes localizam uma comunidade estrutural no grafo."},
@@ -165,10 +165,10 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
     },
     "cypher": {
         "id": "cypher",
-        "name": "Text-to-Cypher / Symbolic Query",
+        "name": "Symbolic Cypher / MENTIONS Query",
         "shortName": "Cypher",
-        "subtitle": "question -> auditable Cypher pattern -> graph rows/docs -> synthesis",
-        "description": "Mostra a familia em que a pergunta vira consulta simbolica. Aqui usamos uma template deterministica segura; a aba Graph tem geracao por LLM para demonstrar text-to-Cypher.",
+        "subtitle": "entities -> auditable Cypher template -> graph rows/docs -> synthesis",
+        "description": "Mostra a familia query-driven: entidades da pergunta alimentam uma consulta Cypher deterministica e auditavel. A aba Graph separada demonstra a geracao de Cypher por LLM.",
         "graph": "symbolic_query_template",
         "text": "documents_queried_by_mentions",
         "synthesis": "query_result_with_text",
@@ -183,9 +183,9 @@ GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
         "bestFor": "Perguntas que podem virar consulta clara: entidades, relacoes, contagens, vizinhos ou documentos ligados.",
         "graphRole": "Plano simbolico: a query explicita exatamente o que foi buscado.",
         "textRole": "Docs entram por MENTIONS e entityHits; embedding nao decide o ranking principal.",
-        "lectureCue": "Use para conectar com a aba Graph e mostrar por que text-to-Cypher e uma familia GraphRAG propria.",
+        "lectureCue": "Use para conectar com a aba Graph e mostrar por que query-driven GraphRAG e uma familia propria.",
         "visualHint": "O trace deve marcar score como symbolic entity hits e mostrar a Cypher equivalente.",
-        "risk": "A qualidade depende da query gerada e do schema conhecido pelo modelo.",
+        "risk": "A qualidade depende do entity grounding e do template escolhido; nao e geracao livre de Cypher.",
         "references": [
             {"label": "Microsoft GraphRAG Local Search", "url": "https://microsoft.github.io/graphrag/query/local_search/"},
             {"label": "Neo4j Cypher Manual", "url": "https://neo4j.com/docs/cypher-manual/current/"},
@@ -225,6 +225,9 @@ class GraphRAG:
             "derivedEntities": [],
             "pathEntities": [],
             "communityEntities": [],
+            "queryEntities": [],
+            "degraded": False,
+            "fallbackStrategy": None,
             "notes": [],
         }
         if mode == "rag":
@@ -368,6 +371,7 @@ class GraphRAG:
             "question": question,
             "hops": hops,
             "topK": top_k,
+            "llmStatus": "retrieval-only",
             "strategies": self.strategy_catalog(),
             "results": {
                 strategy: self.answer(
@@ -428,10 +432,13 @@ class GraphRAG:
         runtime: dict[str, Any] = {
             "strategy": strategy,
             "graphSeeds": entities,
+            "questionEntities": entities,
             "derivedEntities": [],
             "pathEntities": [],
             "communityEntities": [],
             "queryEntities": [],
+            "degraded": False,
+            "fallbackStrategy": None,
             "notes": [],
         }
 
@@ -445,27 +452,41 @@ class GraphRAG:
                 apply_boost=False,
             )
             derived_entities = self.ranked_mentions(seed_docs, limit=8)
-            graph_seeds = self.unique_names([*entities, *derived_entities])
+            graph_seeds = self.unique_names(derived_entities)
+            degraded = False
+            notes = ["O grafo foi expandido depois dos primeiros hits vetoriais; o ranking textual fica cosine puro."]
+            if not graph_seeds:
+                graph_seeds = entities
+                degraded = True
+                notes.append("Nenhuma entidade apareceu nos hits vetoriais; fallback usa entidades da pergunta so para desenhar o grafo.")
             graph = self.neo4j.subgraph_for_seeds(graph_seeds, hops=hops, limit=180)
             runtime.update(
                 {
                     "graphSeeds": graph_seeds,
                     "derivedEntities": derived_entities,
-                    "notes": ["O grafo foi expandido depois dos primeiros hits vetoriais."],
+                    "degraded": degraded,
+                    "fallbackStrategy": "question_entity_graph" if degraded else None,
+                    "notes": notes,
                 }
             )
             return graph, self.tag_documents(seed_docs[:top_k], "vector_first"), runtime
 
         if strategy == "community":
             graph = self.neo4j.community_subgraph_for_seeds(entities, limit=180)
+            degraded = False
+            notes = ["A comunidade estrutural substitui a expansao k-hop comum."]
             if not graph.get("nodes"):
                 graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
+                degraded = True
+                notes = ["Nenhuma comunidade estrutural foi encontrada; fallback usa subgrafo k-hop."]
             community_entities = self.top_graph_node_names(graph, limit=28)
             runtime.update(
                 {
                     "graphSeeds": entities,
                     "communityEntities": community_entities,
-                    "notes": ["A comunidade estrutural substitui a expansao k-hop comum."],
+                    "degraded": degraded,
+                    "fallbackStrategy": "kg_index" if degraded else None,
+                    "notes": notes,
                 }
             )
             docs = self.retrieve_text_ranked(
@@ -475,43 +496,123 @@ class GraphRAG:
                 mode="hybrid",
                 limit=max(top_k * 6, 36),
                 apply_boost=True,
+                boost_entities=community_entities,
             )
             docs = self.rerank_by_mentions(docs, entities, community_entities, "community", seed_pair_bonus=False)
             return graph, self.tag_documents(docs[:top_k], "community"), runtime
+
+        if strategy == "cypher":
+            query_entities = self.unique_names(entities)
+            if not query_entities:
+                graph = self.neo4j.global_graph(limit=120)
+                docs = self.retrieve_text_ranked(
+                    question,
+                    entities=[],
+                    graph={},
+                    mode="rag",
+                    limit=top_k,
+                    apply_boost=False,
+                )
+                runtime.update(
+                    {
+                        "graphSeeds": [],
+                        "queryEntities": [],
+                        "degraded": True,
+                        "fallbackStrategy": "vector_first",
+                        "notes": ["Sem entidade resolvida, nao ha parametros seguros para a query simbolica; fallback usa busca vetorial pura."],
+                    }
+                )
+                return graph, self.tag_documents(docs[:top_k], "cypher_fallback_vector"), runtime
+
+            graph = self.neo4j.mentions_graph_for_entities(query_entities, limit=max(top_k * 3, 18))
+            runtime.update(
+                {
+                    "graphSeeds": query_entities,
+                    "queryEntities": query_entities,
+                    "notes": ["A consulta simbolica usa MENTIONS como ponte auditavel entre entidades e documentos."],
+                }
+            )
+            docs = self.entity_documents(query_entities, question, method="cypher_mentions", limit=top_k)
+            if not docs:
+                docs = self.retrieve_text_ranked(
+                    question,
+                    entities=query_entities,
+                    graph=graph,
+                    mode="hybrid",
+                    limit=top_k,
+                    apply_boost=True,
+                    required_entities=query_entities,
+                )
+                runtime.update(
+                    {
+                        "degraded": True,
+                        "fallbackStrategy": "graph_filter",
+                        "notes": [
+                            "A query simbolica nao retornou documentos suficientes; fallback usa busca vetorial filtrada por entidades."
+                        ],
+                    }
+                )
+            return graph, self.tag_documents(docs[:top_k], "cypher"), runtime
 
         graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
 
         if strategy == "graph_filter":
             linked_entities = self.top_graph_node_names(graph, limit=64)
+            required_entities = self.unique_names([*entities, *linked_entities])
             runtime.update(
                 {
                     "graphSeeds": entities,
                     "derivedEntities": linked_entities[:12],
-                    "notes": ["Documentos sem mencao ao subgrafo sao descartados depois da busca vetorial."],
+                    "notes": ["O indice vetorial e varrido com filtro duro: documentos precisam mencionar sementes ou nos do subgrafo."],
                 }
             )
-            candidates = self.retrieve_text_ranked(
+            docs = self.retrieve_text_ranked(
                 question,
                 entities=entities,
                 graph=graph,
                 mode="hybrid",
-                limit=max(top_k * 10, 48),
+                limit=top_k,
                 apply_boost=True,
+                required_entities=required_entities,
+                boost_entities=linked_entities,
             )
-            docs = self.filter_docs_by_mentions(candidates, [*entities, *linked_entities])
             if len(docs) < top_k:
                 docs = self.merge_documents(
                     docs,
-                    self.entity_documents([*entities, *linked_entities[:24]], question, method="graph_filter_mentions", limit=top_k),
+                    self.entity_documents(required_entities[:40], question, method="graph_filter_mentions", limit=top_k),
                 )
             return graph, self.tag_documents(docs[:top_k], "graph_filter"), runtime
 
         if strategy == "path":
-            path_entities = self.path_entity_names(entities, graph)
+            path_focus = self.path_focus(entities, graph)
+            path_entities = path_focus["entities"]
+            if not path_focus["hasRelationalFocus"]:
+                runtime.update(
+                    {
+                        "graphSeeds": entities,
+                        "pathEntities": path_entities,
+                        "degraded": True,
+                        "fallbackStrategy": "kg_index",
+                        "notes": [
+                            "Path retrieval exige pelo menos duas entidades e um caminho/conector; fallback usa KG-as-Index."
+                        ],
+                    }
+                )
+                docs = self.retrieve_text_ranked(
+                    question,
+                    entities=entities,
+                    graph=graph,
+                    mode="hybrid",
+                    limit=top_k,
+                    apply_boost=True,
+                )
+                return graph, self.tag_documents(docs[:top_k], "path_fallback_kg_index"), runtime
             runtime.update(
                 {
                     "graphSeeds": entities,
                     "pathEntities": path_entities,
+                    "pathsFound": path_focus["paths"],
+                    "connectorsFound": path_focus["connectors"],
                     "notes": ["Caminhos curtos e conectores 2-hop recebem peso extra no reranking."],
                 }
             )
@@ -522,32 +623,13 @@ class GraphRAG:
                 mode="hybrid",
                 limit=max(top_k * 10, 48),
                 apply_boost=True,
+                boost_entities=path_entities,
             )
             docs = self.rerank_by_mentions(candidates, entities, path_entities, "path", seed_pair_bonus=True)
-            if len(self.filter_docs_by_mentions(docs, path_entities)) >= max(2, top_k // 3):
-                docs = self.filter_docs_by_mentions(docs, [*entities, *path_entities]) or docs
+            focused_docs = self.filter_docs_by_mentions(docs, [*entities, *path_entities])
+            if len(focused_docs) >= max(2, top_k // 3):
+                docs = focused_docs
             return graph, self.tag_documents(docs[:top_k], "path"), runtime
-
-        if strategy == "cypher":
-            query_entities = entities or self.top_graph_node_names(graph, limit=4)
-            runtime.update(
-                {
-                    "graphSeeds": entities,
-                    "queryEntities": query_entities,
-                    "notes": ["A consulta simbolica usa MENTIONS como ponte entre entidades e documentos."],
-                }
-            )
-            docs = self.entity_documents(query_entities, question, method="cypher_mentions", limit=top_k)
-            if not docs:
-                docs = self.retrieve_text_ranked(
-                    question,
-                    entities=entities,
-                    graph=graph,
-                    mode="hybrid",
-                    limit=top_k,
-                    apply_boost=True,
-                )
-            return graph, self.tag_documents(docs[:top_k], "cypher"), runtime
 
         docs = self.retrieve_text_ranked(
             question,
@@ -591,12 +673,21 @@ class GraphRAG:
         )
         return [str(node["name"]) for node in ranked[:limit]]
 
-    def path_entity_names(self, entities: list[str], graph: dict[str, Any]) -> list[str]:
+    def path_focus(self, entities: list[str], graph: dict[str, Any]) -> dict[str, Any]:
+        paths = self.shortest_paths(entities, limit=4)
+        connectors = self.connector_rows(entities, graph.get("edges") or [], limit=8)
         names: list[str] = []
-        for path in self.shortest_paths(entities, limit=4):
-            names.extend(path.get("path") or [])
-        names.extend(row["name"] for row in self.connector_rows(entities, graph.get("edges") or [], limit=8))
-        return self.unique_names([*entities, *names])
+        seed_set = set(entities)
+        for path in paths:
+            names.extend(name for name in path.get("path") or [] if name not in seed_set)
+        names.extend(row["name"] for row in connectors)
+        focus_entities = self.unique_names(names)
+        return {
+            "entities": focus_entities,
+            "paths": paths,
+            "connectors": connectors,
+            "hasRelationalFocus": len(entities) >= 2 and bool(paths or connectors),
+        }
 
     @staticmethod
     def filter_docs_by_mentions(documents: list[dict[str, Any]], names: list[str]) -> list[dict[str, Any]]:
@@ -730,9 +821,10 @@ class GraphRAG:
         nodes = graph.get("nodes") or []
         relationship_counts = Counter(edge.get("type") or "UNKNOWN" for edge in edges)
         boosted_documents = [doc for doc in documents if float(doc.get("graphBoost") or 0.0) > 0]
-        direct_edges = self.direct_edges(entities, edges)
-        connectors = self.connector_rows(entities, edges)
-        paths = self.shortest_paths(entities) if mode in {"graph", "hybrid"} else []
+        symbolic_query = mode == "hybrid" and strategy_id == "cypher"
+        direct_edges = [] if symbolic_query else self.direct_edges(entities, edges)
+        connectors = [] if symbolic_query else self.connector_rows(entities, edges)
+        paths = [] if symbolic_query else (self.shortest_paths(entities) if mode in {"graph", "hybrid"} else [])
         context = context_sections.get("selected") or ""
 
         return {
@@ -748,6 +840,8 @@ class GraphRAG:
                 "references": strategy["references"] if mode == "hybrid" else [],
                 "implemented": [strategy["graph"], strategy["text"], strategy["synthesis"]] if mode == "hybrid" else [],
                 "notImplemented": [],
+                "degraded": bool(strategy_runtime.get("degraded")) if mode == "hybrid" else False,
+                "fallbackStrategy": strategy_runtime.get("fallbackStrategy") if mode == "hybrid" else None,
             },
             "strategy": {
                 "mode": mode,
@@ -757,6 +851,9 @@ class GraphRAG:
                 "synthesis": strategy["synthesis"] if mode == "hybrid" else "ollama_or_retrieval_only",
                 "scoreFormula": strategy["scoreFormula"] if mode == "hybrid" else "n/a",
                 "runtime": strategy_runtime,
+                "notes": strategy_runtime.get("notes") or [],
+                "degraded": bool(strategy_runtime.get("degraded")),
+                "fallbackStrategy": strategy_runtime.get("fallbackStrategy"),
             },
             "grounding": {
                 "question": question,
@@ -866,6 +963,12 @@ class GraphRAG:
     ) -> dict[str, Any]:
         strategy_runtime = strategy_runtime or {}
         if strategy == "community":
+            if strategy_runtime.get("degraded"):
+                return {
+                    "label": "community fallback: deterministic k-hop expansion",
+                    "parameters": {"seeds": entities, "hops": hops, "limit": 180},
+                    "cypher": GraphRAG.graph_query_trace(entities, hops, "kg_index", strategy_runtime)["cypher"],
+                }
             return {
                 "label": "community subgraph selection",
                 "parameters": {"seeds": entities, "limit": 180},
@@ -879,8 +982,20 @@ class GraphRAG:
                 ),
             }
         if strategy == "cypher":
+            if strategy_runtime.get("degraded"):
+                return {
+                    "label": "symbolic query fallback",
+                    "parameters": {
+                        "entities": strategy_runtime.get("queryEntities") or entities,
+                        "fallbackStrategy": strategy_runtime.get("fallbackStrategy"),
+                    },
+                    "cypher": (
+                        "/* symbolic query requires grounded entities; this execution used the fallback reported above */\n"
+                        "MATCH (d:RetrievalDocument) RETURN d ORDER BY d.sequence LIMIT $limit"
+                    ),
+                }
             return {
-                "label": "symbolic MENTIONS query",
+                "label": "deterministic symbolic MENTIONS query",
                 "parameters": {"entities": strategy_runtime.get("queryEntities") or entities, "limit": 180},
                 "cypher": (
                     "MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)\n"
@@ -894,7 +1009,13 @@ class GraphRAG:
         if strategy == "vector_first":
             return {
                 "label": "vector-derived k-hop expansion",
-                "parameters": {"seeds": strategy_runtime.get("graphSeeds") or entities, "hops": hops, "limit": 180},
+                "parameters": {
+                    "questionEntities": strategy_runtime.get("questionEntities") or entities,
+                    "derivedEntities": strategy_runtime.get("derivedEntities") or [],
+                    "seeds": strategy_runtime.get("graphSeeds") or entities,
+                    "hops": hops,
+                    "limit": 180,
+                },
                 "cypher": (
                     "/* seeds come from entities mentioned by initial vector hits */\n"
                     "MATCH (seed:Entity)\n"
@@ -904,6 +1025,16 @@ class GraphRAG:
                 ),
             }
         if strategy == "path":
+            if strategy_runtime.get("degraded"):
+                return {
+                    "label": "path fallback: deterministic k-hop expansion",
+                    "parameters": {
+                        "seeds": entities,
+                        "hops": hops,
+                        "fallbackStrategy": strategy_runtime.get("fallbackStrategy"),
+                    },
+                    "cypher": GraphRAG.graph_query_trace(entities, hops, "kg_index", strategy_runtime)["cypher"],
+                }
             return {
                 "label": "shortest paths + 2-hop connectors",
                 "parameters": {
@@ -922,7 +1053,7 @@ class GraphRAG:
             }
         if strategy == "graph_filter":
             return {
-                "label": "k-hop expansion + strict MENTIONS filter",
+                "label": "k-hop expansion + vector search constrained by MENTIONS",
                 "parameters": {"seeds": entities, "hops": hops, "limit": 180},
                 "cypher": (
                     "MATCH (seed:Entity)\n"
@@ -1023,7 +1154,11 @@ class GraphRAG:
             if mode in {"rag", "hybrid"}
             else ""
         )
-        graph_context = self.build_graph_context(question, entities, graph, hops=hops) if mode in {"graph", "hybrid"} else ""
+        graph_context = (
+            self.build_graph_context(question, entities, graph, hops=hops, strategy_runtime=strategy_runtime)
+            if mode in {"graph", "hybrid"}
+            else ""
+        )
         hybrid_context = (
             self.build_hybrid_context(question, text_context, graph_context, strategy_runtime)
             if mode == "hybrid"
@@ -1097,18 +1232,26 @@ class GraphRAG:
         entities: list[str],
         graph: dict[str, Any],
         hops: int,
+        strategy_runtime: dict[str, Any] | None = None,
     ) -> str:
+        strategy_runtime = strategy_runtime or {}
+        strategy_id = self.normalize_graph_rag_strategy(strategy_runtime.get("strategy"))
+        symbolic_query = strategy_id == "cypher"
         lines: list[str] = []
         lines.append(f"Pergunta: {question}")
-        lines.append("Modo de retrieval: graph estrutural")
-        lines.append(f"Profundidade k-hop: {hops}")
+        if symbolic_query:
+            lines.append("Modo de retrieval: query simbolica sobre MENTIONS")
+            lines.append("Padrao: (RetrievalDocument)-[:MENTIONS]->(Entity)")
+        else:
+            lines.append("Modo de retrieval: graph estrutural")
+            lines.append(f"Profundidade k-hop: {hops}")
 
         if entities:
             lines.append("Entidades detectadas: " + ", ".join(entities))
         else:
             lines.append("Entidades detectadas: nenhuma.")
 
-        if len(entities) >= 2:
+        if len(entities) >= 2 and not symbolic_query:
             lines.append("")
             lines.append("Caminhos curtos entre entidades detectadas:")
             for idx, source in enumerate(entities):
@@ -1119,7 +1262,10 @@ class GraphRAG:
 
         if graph.get("edges"):
             lines.append("")
-            lines.append("Arestas recuperadas do subgrafo:")
+            if symbolic_query:
+                lines.append("Arestas recuperadas da query MENTIONS:")
+            else:
+                lines.append("Arestas recuperadas do subgrafo:")
             for edge in sorted(
                 graph["edges"],
                 key=lambda item: (
@@ -1136,7 +1282,10 @@ class GraphRAG:
 
         if not graph.get("edges"):
             lines.append("")
-            lines.append("Nenhum subgrafo especifico foi recuperado. Responda apenas com a incerteza apropriada.")
+            if symbolic_query:
+                lines.append("Nenhuma linha MENTIONS foi recuperada. Responda apenas com a incerteza apropriada.")
+            else:
+                lines.append("Nenhum subgrafo especifico foi recuperado. Responda apenas com a incerteza apropriada.")
 
         return "\n".join(lines)
 
@@ -1237,12 +1386,17 @@ class GraphRAG:
         limit: int = 8,
         source_type: str | None = None,
         apply_boost: bool = False,
+        required_entities: list[str] | None = None,
+        boost_entities: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        graph_names = {
-            node["name"]
-            for node in graph.get("nodes", [])
-            if node.get("name") and node.get("name") not in entities
-        }
+        if boost_entities is None:
+            graph_names = {
+                node["name"]
+                for node in graph.get("nodes", [])
+                if node.get("name") and node.get("name") not in entities
+            }
+        else:
+            graph_names = {name for name in boost_entities if name and name not in entities}
         if self.vector_store.exists():
             try:
                 results = self.vector_store.search(
@@ -1252,6 +1406,7 @@ class GraphRAG:
                     limit=limit,
                     seed_entities=entities,
                     graph_entities=sorted(graph_names) if apply_boost else [],
+                    required_entities=required_entities or [],
                     source_type=source_type,
                     apply_boost=apply_boost,
                 )
@@ -1268,6 +1423,8 @@ class GraphRAG:
                     limit,
                     source_type=source_type,
                     apply_boost=apply_boost,
+                    required_entities=required_entities,
+                    boost_entities=boost_entities,
                 )
                 for doc in fallback:
                     doc["retrievalMethod"] = "bm25_fallback"
@@ -1281,6 +1438,8 @@ class GraphRAG:
             limit,
             source_type=source_type,
             apply_boost=apply_boost,
+            required_entities=required_entities,
+            boost_entities=boost_entities,
         )
 
     def retrieve_text_bm25(
@@ -1292,12 +1451,17 @@ class GraphRAG:
         limit: int = 8,
         source_type: str | None = None,
         apply_boost: bool = False,
+        required_entities: list[str] | None = None,
+        boost_entities: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         docs = self.neo4j.retrieval_documents()
         if not docs:
             return []
         if source_type:
             docs = [doc for doc in docs if doc.get("sourceType") == source_type]
+        required_set = set(required_entities or [])
+        if required_set:
+            docs = [doc for doc in docs if set(doc.get("mentions") or []) & required_set]
         if not docs:
             return []
 
@@ -1305,11 +1469,14 @@ class GraphRAG:
         if not query_tokens:
             return []
 
-        graph_names = {
-            node["name"]
-            for node in graph.get("nodes", [])
-            if node.get("name") and node.get("name") not in entities
-        }
+        if boost_entities is None:
+            graph_names = {
+                node["name"]
+                for node in graph.get("nodes", [])
+                if node.get("name") and node.get("name") not in entities
+            }
+        else:
+            graph_names = {name for name in boost_entities if name and name not in entities}
         seed_set = set(entities)
         graph_set = graph_names if apply_boost else set()
 

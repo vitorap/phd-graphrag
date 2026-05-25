@@ -382,6 +382,71 @@ class Neo4jClient:
             )
             return [dict(row) for row in rows]
 
+    def mentions_graph_for_entities(self, names: list[str], limit: int = 24) -> dict[str, Any]:
+        names = [name for name in names if name]
+        if not names:
+            return {"nodes": [], "edges": []}
+        with self.driver.session() as session:
+            row = session.run(
+                """
+                MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)
+                WHERE e.name IN $names
+                WITH d, count(DISTINCT e) AS entityHits
+                ORDER BY entityHits DESC, d.sequence
+                LIMIT $limit
+                WITH collect(d) AS docs
+                MATCH (d:RetrievalDocument)-[r:MENTIONS]->(e:Entity)
+                WHERE d IN docs AND e.name IN $names
+                WITH collect(DISTINCT d) AS docs, collect(DISTINCT e) AS entities, collect(DISTINCT r) AS rels
+                WITH docs + entities AS nodes, rels
+                RETURN
+                  [n IN nodes | {
+                    id: elementId(n),
+                    name: CASE
+                      WHEN n.name IS NOT NULL THEN n.name
+                      WHEN n.sourceTitle IS NOT NULL THEN n.sourceTitle + ' #' + toString(coalesce(n.sequence, 0))
+                      ELSE n.id
+                    END,
+                    labels: labels(n),
+                    kind: coalesce(n.kind, head(labels(n))),
+                    race: n.race,
+                    gender: n.gender,
+                    pagerank: n.pagerank,
+                    community: n.community,
+                    weightedDegree: n.weightedDegree,
+                    sourceTitle: n.sourceTitle,
+                    chapterTitle: n.chapterTitle,
+                    sourceType: n.sourceType,
+                    speaker: n.speaker
+                  }] AS nodes,
+                  [r IN rels | {
+                    id: elementId(r),
+                    source: elementId(startNode(r)),
+                    target: elementId(endNode(r)),
+                    sourceName: CASE
+                      WHEN startNode(r).name IS NOT NULL THEN startNode(r).name
+                      WHEN startNode(r).sourceTitle IS NOT NULL
+                        THEN startNode(r).sourceTitle + ' #' + toString(coalesce(startNode(r).sequence, 0))
+                      ELSE startNode(r).id
+                    END,
+                    targetName: CASE
+                      WHEN endNode(r).name IS NOT NULL THEN endNode(r).name
+                      WHEN endNode(r).sourceTitle IS NOT NULL
+                        THEN endNode(r).sourceTitle + ' #' + toString(coalesce(endNode(r).sequence, 0))
+                      ELSE endNode(r).id
+                    END,
+                    type: type(r),
+                    weight: coalesce(r.weight, 1),
+                    confidence: r.confidence,
+                    method: r.method,
+                    sourceDataset: r.sourceDataset
+                  }] AS edges
+                """,
+                names=names,
+                limit=limit,
+            ).single()
+        return self._with_layout(row["nodes"] if row else [], row["edges"] if row else [])
+
     def run_readonly_cypher(self, query: str, limit: int = 100) -> dict[str, Any]:
         wrapped = self.prepare_readonly_cypher(query, limit=limit)
         with self.driver.session(default_access_mode="READ") as session:
@@ -465,6 +530,8 @@ class Neo4jClient:
             return "language"
         if "Race" in labels:
             return "race"
+        if "RetrievalDocument" in labels:
+            return "document"
         return "entity"
 
 

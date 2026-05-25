@@ -127,7 +127,7 @@ make ask Q="Quais personagens conectam hobbits, elfos e homens?"
    - Mostrar RAG vetorial: bom para narrativa, sem estrutura explicita.
    - Mostrar Graph: bom para caminho/vizinhanca, mas pobre em explicacao.
    - Mostrar GraphRAG: entidades + subgrafo + chunks ligados ao subgrafo.
-   - Na aba GraphRAG, alternar estrategias: `KG-as-Index`, `Vector-first`, `Graph filter`, `Paths`, `Community` e `Cypher`.
+   - Na aba GraphRAG, alternar estrategias: `KG-as-Index`, `Vector-first`, `Graph filter`, `Paths`, `Community` e `Symbolic Cypher`.
    - Alterar `hops=1`, `hops=2`, `hops=3`.
    - Ligar a chave `Sintese com LLM` apenas quando o modelo ja estiver preaquecido.
 
@@ -201,11 +201,17 @@ LIMIT 10;
 A aba **GraphRAG** nao trata GraphRAG como uma tecnica unica. Ela permite selecionar e comparar seis familias:
 
 - `kg_index`: entidades da pergunta abrem subgrafo k-hop; o subgrafo da boost no ranking vetorial.
-- `vector_first`: busca vetorial primeiro; entidades dos chunks recuperados expandem o grafo depois.
-- `graph_filter`: subgrafo vira filtro duro; so ficam documentos ligados por `MENTIONS`.
-- `path`: caminhos curtos e conectores 2-hop recebem peso extra no reranking.
-- `community`: comunidade estrutural dos personagens aproxima a ideia local-to-global.
-- `cypher`: template simbolica read-only mostra a familia text-to-Cypher/query-driven.
+- `vector_first`: busca vetorial pura primeiro; entidades mencionadas nos chunks recuperados expandem o grafo depois.
+- `graph_filter`: subgrafo vira filtro duro dentro da busca vetorial; so entram documentos ligados por `MENTIONS`.
+- `path`: exige pelo menos duas entidades; caminhos curtos e conectores 2-hop recebem peso extra no reranking.
+- `community`: comunidade estrutural dos personagens aproxima a ideia local-to-global e marca fallback quando nao ha comunidade.
+- `cypher`: template Cypher simbolico e read-only busca documentos por `MENTIONS`; a geracao livre de Cypher fica na aba Graph.
+
+Para auditar se as variantes nao colapsaram no mesmo codigo:
+
+```bash
+make smoke-strategies
+```
 
 Referencias usadas na UI: Microsoft GraphRAG Local/Global Search, From Local to Global GraphRAG, GRAG, KG2RAG, LightRAG, HippoRAG e GNN-RAG.
 

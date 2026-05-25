@@ -122,6 +122,7 @@ class VectorStore:
         limit: int = 8,
         seed_entities: list[str] | None = None,
         graph_entities: list[str] | None = None,
+        required_entities: list[str] | None = None,
         source_type: str | None = None,
         apply_boost: bool = False,
     ) -> list[dict[str, Any]]:
@@ -131,6 +132,7 @@ class VectorStore:
         scores = vectors @ query_embedding
         seed_set = set(seed_entities or [])
         graph_set = set(graph_entities or [])
+        required_set = set(required_entities or [])
         candidates: list[dict[str, Any]] = []
 
         for idx, base_score in enumerate(scores):
@@ -138,6 +140,8 @@ class VectorStore:
             if source_type and meta.get("sourceType") != source_type:
                 continue
             mentions = set(meta.get("mentions") or [])
+            if required_set and not (mentions & required_set):
+                continue
             seed_hits = mentions & seed_set
             graph_hits = mentions & graph_set
             graph_boost = 0.0
