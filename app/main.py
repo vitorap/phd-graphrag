@@ -22,7 +22,7 @@ app = FastAPI(title="GraphRAG em Middle-earth")
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=3)
     hops: int = Field(2, ge=1, le=4)
-    mode: str = Field("graph", pattern="^(graph|baseline)$")
+    mode: str = Field("hybrid", pattern="^(rag|graph|hybrid|baseline)$")
     model: str | None = None
     use_llm: bool = False
 
@@ -73,6 +73,21 @@ def ask(payload: AskRequest) -> dict[str, Any]:
             payload.question,
             hops=payload.hops,
             mode=payload.mode,
+            model=payload.model,
+            use_llm=payload.use_llm,
+        )
+    finally:
+        client.close()
+
+
+@app.post("/api/compare")
+def compare(payload: AskRequest) -> dict[str, Any]:
+    client = Neo4jClient()
+    try:
+        rag = GraphRAG(client, OllamaClient(model=payload.model))
+        return rag.compare(
+            payload.question,
+            hops=payload.hops,
             model=payload.model,
             use_llm=payload.use_llm,
         )

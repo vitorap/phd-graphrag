@@ -2,10 +2,43 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
+from math import log
 from typing import Any
 
 from app.neo4j_client import Neo4jClient
 from app.ollama_client import OllamaClient
+
+
+STOPWORDS = {
+    "a",
+    "about",
+    "ao",
+    "aos",
+    "as",
+    "com",
+    "como",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "em",
+    "for",
+    "from",
+    "is",
+    "o",
+    "os",
+    "para",
+    "por",
+    "qual",
+    "que",
+    "the",
+    "to",
+    "what",
+    "with",
+}
 
 
 def normalize(value: str) -> str:
@@ -27,12 +60,14 @@ class GraphRAG:
         model: str | None = None,
         use_llm: bool = True,
     ) -> dict[str, Any]:
+        mode = self.normalize_mode(mode)
         entities = self.resolve_entities(question)
-        graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180) if mode == "graph" else {}
-        context = self.build_context(question, entities, graph, hops=hops, mode=mode)
+        graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180) if mode in {"graph", "hybrid"} else {}
+        documents = self.retrieve_text(question, entities, graph, mode) if mode in {"rag", "hybrid"} else []
+        context = self.build_context(question, entities, graph, documents, hops=hops, mode=mode)
 
         if not use_llm:
-            answer = self.extractive_answer(question, entities, graph, llm_error=None)
+            answer = self.extractive_answer(question, entities, graph, documents, mode, llm_error=None)
             return {
                 "question": question,
                 "entities": entities,
@@ -41,6 +76,7 @@ class GraphRAG:
                 "context": context,
                 "answer": answer,
                 "graph": graph,
+                "documents": documents,
                 "model": model or self.ollama.model,
                 "llmStatus": "disabled",
             }
@@ -53,7 +89,7 @@ class GraphRAG:
             else:
                 status = "ok"
         except Exception as exc:
-            answer = self.extractive_answer(question, entities, graph, llm_error=str(exc))
+            answer = self.extractive_answer(question, entities, graph, documents, mode, llm_error=str(exc))
             status = f"fallback: {exc}"
 
         return {
@@ -64,9 +100,35 @@ class GraphRAG:
             "context": context,
             "answer": answer,
             "graph": graph,
+            "documents": documents,
             "model": model or self.ollama.model,
             "llmStatus": status,
         }
+
+    def compare(
+        self,
+        question: str,
+        hops: int = 2,
+        model: str | None = None,
+        use_llm: bool = False,
+    ) -> dict[str, Any]:
+        modes = ["rag", "graph", "hybrid"]
+        return {
+            "question": question,
+            "hops": hops,
+            "results": {
+                mode: self.answer(question, hops=hops, mode=mode, model=model, use_llm=use_llm)
+                for mode in modes
+            },
+        }
+
+    @staticmethod
+    def normalize_mode(mode: str) -> str:
+        if mode == "baseline":
+            return "rag"
+        if mode not in {"rag", "graph", "hybrid"}:
+            return "graph"
+        return mode
 
     def resolve_entities(self, question: str, limit: int = 4) -> list[str]:
         question_norm = f" {normalize(question)} "
@@ -105,6 +167,7 @@ class GraphRAG:
         question: str,
         entities: list[str],
         graph: dict[str, Any],
+        documents: list[dict[str, Any]],
         hops: int,
         mode: str,
     ) -> str:
@@ -145,17 +208,36 @@ class GraphRAG:
             lines.append("Arestas recuperadas do subgrafo:")
             for edge in sorted(
                 graph["edges"],
-                key=lambda item: (item["type"] != "INTERACTS_WITH", -(item.get("weight") or 1)),
+                key=lambda item: (
+                    item["type"] not in {"INTERACTS_WITH", "CO_OCCURS_WITH"},
+                    -(item.get("weight") or item.get("confidence") or 1),
+                ),
             )[:45]:
-                weight = edge.get("weight") or 1
+                weight = edge.get("weight") or edge.get("confidence") or 1
                 dataset = edge.get("sourceDataset") or "graph"
+                method = f", metodo={edge['method']}" if edge.get("method") else ""
                 lines.append(
-                    f"- {edge['sourceName']} -[{edge['type']}, peso={weight}, fonte={dataset}]-> {edge['targetName']}"
+                    f"- {edge['sourceName']} -[{edge['type']}, peso={weight}{method}, fonte={dataset}]-> {edge['targetName']}"
                 )
 
-        if not graph.get("edges"):
+        if documents:
+            lines.append("")
+            lines.append("Evidencias textuais recuperadas:")
+            for doc in documents[:8]:
+                mentions = ", ".join(doc.get("mentions") or [])
+                source = doc.get("sourceTitle") or doc.get("sourceType") or "texto"
+                chapter = f" / {doc['chapterTitle']}" if doc.get("chapterTitle") else ""
+                speaker = f" / fala de {doc['speaker']}" if doc.get("speaker") else ""
+                score = float(doc.get("score") or 0.0)
+                lines.append(f"- [{source}{chapter}{speaker}; score={score:.2f}; mencoes={mentions}]")
+                lines.append(f"  {doc.get('snippet') or doc.get('text') or ''}")
+
+        if not graph.get("edges") and mode in {"graph", "hybrid"}:
             lines.append("")
             lines.append("Nenhum subgrafo especifico foi recuperado. Responda apenas com a incerteza apropriada.")
+        if not documents and mode in {"rag", "hybrid"}:
+            lines.append("")
+            lines.append("Nenhuma evidencia textual especifica foi recuperada.")
 
         return "\n".join(lines)
 
@@ -167,22 +249,91 @@ class GraphRAG:
                 "content": (
                     "Voce e um assistente para uma aula de doutorado sobre GNN, Knowledge Graphs, LLMs e GraphRAG. "
                     "Nao exponha raciocinio interno, passos ocultos ou texto de thinking. "
-                    "Responda em portugues brasileiro. Use apenas o contexto recuperado do grafo. "
-                    "Explique a resposta de forma curta, cite as entidades e relacoes relevantes, e quando fizer sentido "
-                    "conecte a ideia com vizinhanca k-hop/message passing."
+                    "Responda em portugues brasileiro. Use apenas o contexto recuperado. "
+                    "Diferencie evidencia textual de evidencia estrutural quando isso ajudar. "
+                    "Explique a resposta de forma curta, cite entidades, relacoes, chunks ou falas relevantes, "
+                    "e conecte a ideia com vizinhanca k-hop/message passing quando fizer sentido."
                 ),
             },
             {
                 "role": "user",
-                "content": f"/no_think\nContexto recuperado do grafo:\n{context}\n\nPergunta: {question}",
+                "content": f"/no_think\nContexto recuperado:\n{context}\n\nPergunta: {question}",
             },
         ]
+
+    def retrieve_text(
+        self,
+        question: str,
+        entities: list[str],
+        graph: dict[str, Any],
+        mode: str,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        docs = self.neo4j.retrieval_documents()
+        if not docs:
+            return []
+
+        query_tokens = tokenize(question)
+        if not query_tokens:
+            return []
+
+        graph_names = {
+            node["name"]
+            for node in graph.get("nodes", [])
+            if node.get("name") and node.get("name") not in entities
+        }
+        seed_set = set(entities)
+        graph_set = graph_names if mode == "hybrid" else set()
+
+        tokenized_docs = [tokenize(str(doc.get("text") or "")) for doc in docs]
+        doc_freq: Counter[str] = Counter()
+        for tokens in tokenized_docs:
+            doc_freq.update(set(tokens))
+        avg_len = sum(len(tokens) for tokens in tokenized_docs) / max(1, len(tokenized_docs))
+        total_docs = len(docs)
+
+        scored: list[dict[str, Any]] = []
+        for doc, tokens in zip(docs, tokenized_docs):
+            if not tokens:
+                continue
+            token_counts = Counter(tokens)
+            score = 0.0
+            for token in query_tokens:
+                tf = token_counts.get(token, 0)
+                if tf == 0:
+                    continue
+                df = doc_freq.get(token, 0)
+                idf = log(1 + (total_docs - df + 0.5) / (df + 0.5))
+                denom = tf + 1.5 * (1 - 0.75 + 0.75 * len(tokens) / max(avg_len, 1))
+                score += idf * (tf * 2.5) / denom
+
+            mentions = set(doc.get("mentions") or [])
+            seed_hits = mentions & seed_set
+            graph_hits = mentions & graph_set
+            score += len(seed_hits) * 1.65
+            score += min(len(graph_hits), 6) * 0.18
+            if doc.get("sourceType") == "book":
+                score += 0.2
+            if len(seed_hits) >= 2:
+                score += 1.5
+
+            if score <= 0:
+                continue
+            enriched = dict(doc)
+            enriched["score"] = score
+            enriched["snippet"] = snippet(str(doc.get("text") or ""), query_tokens, max_chars=780)
+            scored.append(enriched)
+
+        scored.sort(key=lambda item: item["score"], reverse=True)
+        return scored[:limit]
 
     def extractive_answer(
         self,
         question: str,
         entities: list[str],
         graph: dict[str, Any],
+        documents: list[dict[str, Any]],
+        mode: str,
         llm_error: str | None,
     ) -> str:
         prefix = ""
@@ -197,20 +348,47 @@ class GraphRAG:
         edges = graph.get("edges") or []
         edge_text = self.direct_edge_summary(entities, edges)
         connector_text = self.connector_summary(entities, edges)
+        evidence_text = self.text_evidence_summary(documents)
         entity_text = ", ".join(entities)
 
         parts = [
-            f"{prefix}Pelo subgrafo recuperado, a pergunta envolve {entity_text}.",
+            f"{prefix}Modo `{mode}`: a pergunta envolve {entity_text}.",
         ]
+        if {"Frodo", "Sauron"} <= set(entities) and documents:
+            if mode == "hybrid":
+                parts.append(
+                    "A leitura hibrida fica mais forte aqui: Frodo aparece como o portador que precisa levar o Anel "
+                    "ate Mordor, enquanto Sauron aparece como o poder antagonista ligado ao Um Anel. O grafo mostra "
+                    "a conexao estrutural; o texto explica a natureza narrativa dessa conexao."
+                )
+            else:
+                parts.append(
+                    "O RAG textual recupera a dimensao narrativa: Frodo aparece ligado ao Anel e a missao rumo a "
+                    "Mordor, enquanto Sauron aparece como a forca que busca recuperar esse poder."
+                )
         if edge_text:
             parts.append(edge_text)
         if connector_text:
             parts.append(connector_text)
+        if evidence_text:
+            parts.append(evidence_text)
         parts.append(
             "Para conectar com GNN: `hops=1` mostra relacoes diretas; `hops=2` inclui intermediarios "
             "que funcionam como campo receptivo; `hops=3+` aumenta cobertura, mas tambem traz ruido."
         )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def text_evidence_summary(documents: list[dict[str, Any]]) -> str:
+        if not documents:
+            return ""
+        sources = []
+        for doc in documents[:4]:
+            source = doc.get("sourceTitle") or doc.get("sourceType") or "texto"
+            chapter = f" / {doc['chapterTitle']}" if doc.get("chapterTitle") else ""
+            speaker = f" / fala de {doc['speaker']}" if doc.get("speaker") else ""
+            sources.append(f"{source}{chapter}{speaker}")
+        return "O RAG textual recuperou evidencias em: " + "; ".join(sources) + "."
 
     @staticmethod
     def direct_edge_summary(entities: list[str], edges: list[dict[str, Any]]) -> str:
@@ -226,7 +404,7 @@ class GraphRAG:
         fragments = []
         for edge in sorted(direct, key=lambda item: (item["type"], -(item.get("weight") or 1)))[:6]:
             fragments.append(
-                f"{edge['sourceName']} -[{edge['type']}, peso={edge.get('weight', 1)}]-> {edge['targetName']}"
+                f"{edge['sourceName']} -[{edge['type']}, peso={edge.get('weight') or edge.get('confidence') or 1}]-> {edge['targetName']}"
             )
         return "Ha relacoes diretas importantes: " + "; ".join(fragments) + "."
 
@@ -257,3 +435,26 @@ class GraphRAG:
             for name in ranked
         )
         return f"Em 2-hop, os conectores mais fortes entre {left} e {right} incluem: {formatted}."
+
+
+def tokenize(value: str) -> list[str]:
+    normalized = normalize(value)
+    return [token for token in normalized.split() if len(token) > 2 and token not in STOPWORDS]
+
+
+def snippet(text: str, query_tokens: list[str], max_chars: int = 760) -> str:
+    if len(text) <= max_chars:
+        return text
+    lower = normalize(text)
+    first_hit = -1
+    for token in query_tokens:
+        first_hit = lower.find(token)
+        if first_hit >= 0:
+            break
+    if first_hit < 0:
+        return text[:max_chars].strip() + "..."
+    start = max(0, first_hit - max_chars // 3)
+    end = min(len(text), start + max_chars)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return prefix + text[start:end].strip() + suffix

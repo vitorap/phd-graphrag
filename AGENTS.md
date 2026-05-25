@@ -15,6 +15,7 @@ Entregar uma aplicacao local que:
 - cria um grafo hibrido no Neo4j;
 - mostra o grafo visualmente;
 - executa retrieval por subgrafo/k-hop;
+- compara RAG textual, Graph retrieval e GraphRAG hibrido;
 - usa Ollama local no host para gerar respostas em portugues;
 - ajuda o apresentador a conectar GraphRAG com conceitos de GNN.
 
@@ -23,8 +24,9 @@ Entregar uma aplicacao local que:
 - Banco: Neo4j.
 - LLM: Ollama local no host, acessado pelo app em Docker via `host.docker.internal:11434`.
 - Modelo default: `qwen3.6:latest`.
-- Dataset principal: Raphtory LOTR cooccurrence graph.
+- Dataset principal: Raphtory LOTR cooccurrence graph + SNA_LOTR.
 - Camada semantica: `Lotro/lotro.github.io` OWL ontology.
+- Corpus textual: textos completos limpos e scripts do SNA_LOTR versionados em `data/raw/sna_lotr/`.
 - App: FastAPI + frontend estatico.
 - Visualizacao: SVG/JavaScript nativo, sem CDN obrigatorio.
 
@@ -50,10 +52,18 @@ Labels principais:
 - `Language`
 - `Race`
 - `Name`
+- `Book`
+- `Movie`
+- `Chapter`
+- `RetrievalDocument`
+- `TextChunk`
+- `DialogueLine`
 
 Relacoes principais:
 
 - `INTERACTS_WITH`
+- `CO_OCCURS_WITH`
+- `PREDICTED_LINK`
 - `HAS_RACE`
 - `FRIEND_OF`
 - `ENEMY_OF`
@@ -67,6 +77,12 @@ Relacoes principais:
 - `NEPHEW_OF`
 - `UNCLE_OF`
 - `HAS_NAME`
+- `MENTIONS`
+- `SPEAKS_LINE`
+- `IN_BOOK`
+- `IN_MOVIE`
+- `IN_CHAPTER`
+- `SIMILAR_CHAPTER`
 
 ## Cuidados
 
@@ -79,7 +95,10 @@ Relacoes principais:
   - `Elessar` -> `Aragorn`
   - `Strider` -> `Aragorn`
   - `Smeagol`/`Sméagol` -> `Gollum`
-- As respostas do LLM devem citar que sao baseadas no subgrafo recuperado, nao em conhecimento externo.
+- As respostas do LLM devem citar que sao baseadas no contexto recuperado, separando evidencia textual de evidencia estrutural quando for util.
+- `rag` usa BM25 sobre `RetrievalDocument`.
+- `graph` usa entidades, subgrafo k-hop, caminhos e vizinhos.
+- `hybrid` usa o subgrafo para orientar e reforcar chunks textuais ligados por `MENTIONS`.
 
 ## Validacao Antes de Finalizar
 
@@ -90,7 +109,8 @@ make up
 make data
 make seed
 make stats
-make ask Q="Como Frodo se conecta a Sauron?"
+make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
+make compare Q="Qual a relação de Frodo com Sauron?"
 ```
 
 Verificar:
@@ -98,4 +118,5 @@ Verificar:
 - Neo4j Browser abre em http://localhost:7474.
 - App abre em http://localhost:8000.
 - `make stats` mostra nos e relacoes.
-- A pergunta retorna entidades detectadas, contexto e resposta ou fallback.
+- A pergunta retorna entidades detectadas, contexto textual/estrutural e resposta ou fallback.
+- A comparacao mostra diferencas claras entre RAG, Graph e GraphRAG.

@@ -6,9 +6,12 @@ const centerInput = document.querySelector("#centerInput");
 const llmInput = document.querySelector("#llmInput");
 const graphButton = document.querySelector("#graphButton");
 const askButton = document.querySelector("#askButton");
+const compareButton = document.querySelector("#compareButton");
 const graphMeta = document.querySelector("#graphMeta");
 const answerBox = document.querySelector("#answerBox");
 const contextBox = document.querySelector("#contextBox");
+const compareResults = document.querySelector("#compareResults");
+const answerPanel = document.querySelector(".answer-panel");
 const entitiesList = document.querySelector("#entitiesList");
 const topList = document.querySelector("#topList");
 const statsStrip = document.querySelector("#statsStrip");
@@ -57,6 +60,8 @@ function renderStats(stats) {
     <span>Entidades: ${stats.entities}</span>
     <span>Relacoes: ${stats.relationships}</span>
     <span>Personagens: ${stats.characters}</span>
+    <span>Docs RAG: ${stats.retrievalDocuments || 0}</span>
+    <span>Chunks: ${stats.textChunks || 0}</span>
   `;
   topList.innerHTML = "";
   for (const item of stats.topCharacters || []) {
@@ -69,6 +74,8 @@ function renderStats(stats) {
 
 function edgeClass(edge) {
   if (edge.type === "ENEMY_OF") return "edge semantic enemy";
+  if (edge.type === "CO_OCCURS_WITH") return "edge cooccur";
+  if (edge.type === "PREDICTED_LINK") return "edge predicted";
   if (edge.type !== "INTERACTS_WITH") return "edge semantic";
   return "edge";
 }
@@ -124,7 +131,8 @@ function renderGraph(graph) {
     line.setAttribute("class", edgeClass(edge));
     line.setAttribute("stroke-width", Math.min(5, 0.7 + Math.log2(Number(edge.weight || 1) + 1)));
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = `${edge.sourceName} -[${edge.type}, peso=${edge.weight}]-> ${edge.targetName}`;
+    const weight = edge.weight || edge.confidence || 1;
+    title.textContent = `${edge.sourceName} -[${edge.type}, peso=${weight}]-> ${edge.targetName}`;
     line.appendChild(title);
     edgeLayer.appendChild(line);
   }
@@ -169,6 +177,44 @@ function renderAnswer(text) {
   return escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
+function renderEvidenceList(documents) {
+  const list = document.createElement("ul");
+  list.className = "evidence-list";
+  for (const doc of (documents || []).slice(0, 3)) {
+    const item = document.createElement("li");
+    const source = doc.sourceTitle || doc.sourceType || "texto";
+    const chapter = doc.chapterTitle ? ` / ${doc.chapterTitle}` : "";
+    const speaker = doc.speaker ? ` / ${doc.speaker}` : "";
+    item.innerHTML = `<strong>${source}${chapter}${speaker}</strong><br />score ${Number(doc.score || 0).toFixed(2)}`;
+    list.appendChild(item);
+  }
+  return list;
+}
+
+function renderCompare(results) {
+  const labels = {
+    rag: "RAG",
+    graph: "Graph",
+    hybrid: "GraphRAG",
+  };
+  compareResults.innerHTML = "";
+  for (const mode of ["rag", "graph", "hybrid"]) {
+    const result = results[mode];
+    if (!result) continue;
+    const card = document.createElement("article");
+    card.className = "compare-card";
+    const title = document.createElement("h3");
+    title.textContent = labels[mode] || mode;
+    const answer = document.createElement("p");
+    answer.innerHTML = renderAnswer(result.answer || "");
+    card.append(title, answer);
+    if (result.documents && result.documents.length) {
+      card.appendChild(renderEvidenceList(result.documents));
+    }
+    compareResults.appendChild(card);
+  }
+}
+
 async function loadGraph() {
   const center = encodeURIComponent(centerInput.value.trim());
   const hops = encodeURIComponent(hopsInput.value);
@@ -182,8 +228,10 @@ async function loadGraph() {
 }
 
 async function askQuestion() {
+  answerPanel.classList.remove("compare-active");
   answerBox.textContent = "";
   contextBox.textContent = "";
+  compareResults.innerHTML = "";
   llmStatus.textContent = "Consultando grafo e Ollama...";
   askButton.disabled = true;
   try {
@@ -212,6 +260,42 @@ async function askQuestion() {
   }
 }
 
+async function compareQuestion() {
+  answerPanel.classList.add("compare-active");
+  answerBox.textContent = "";
+  contextBox.textContent = "";
+  compareResults.innerHTML = "";
+  llmStatus.textContent = "Comparando RAG, Graph e GraphRAG...";
+  compareButton.disabled = true;
+  try {
+    const payload = {
+      question: questionInput.value,
+      hops: Number(hopsInput.value),
+      mode: modeInput.value,
+      use_llm: llmInput.checked,
+    };
+    const result = await getJson("/api/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderCompare(result.results || {});
+    const hybrid = result.results?.hybrid;
+    if (hybrid) {
+      setTags(hybrid.entities || []);
+      contextBox.textContent = hybrid.context || "";
+      llmStatus.textContent = `${hybrid.model} · comparacao ${hybrid.llmStatus}`;
+      if (hybrid.graph && hybrid.graph.nodes) {
+        renderGraph(hybrid.graph);
+      }
+    }
+  } catch (error) {
+    llmStatus.textContent = `Erro: ${error.message}`;
+  } finally {
+    compareButton.disabled = false;
+  }
+}
+
 async function boot() {
   setTags([]);
   try {
@@ -225,6 +309,7 @@ async function boot() {
 
 graphButton.addEventListener("click", loadGraph);
 askButton.addEventListener("click", askQuestion);
+compareButton.addEventListener("click", compareQuestion);
 hopsInput.addEventListener("change", loadGraph);
 centerInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loadGraph();

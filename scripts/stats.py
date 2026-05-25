@@ -22,8 +22,14 @@ def main() -> int:
                 WITH entities, count(r) AS relationships
                 MATCH (c:Character)
                 WITH entities, relationships, count(c) AS characters
+                MATCH (d:RetrievalDocument)
+                WITH entities, relationships, characters, count(d) AS retrievalDocuments
+                MATCH (t:TextChunk)
+                WITH entities, relationships, characters, retrievalDocuments, count(t) AS textChunks
+                MATCH (l:DialogueLine)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, count(l) AS dialogueLines
                 MATCH (c:Character)
-                RETURN entities, relationships, characters,
+                RETURN entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines,
                        collect(c.name)[0..10] AS sample
                 """
             ).single()
@@ -39,7 +45,7 @@ def main() -> int:
                 MATCH (c:Character)
                 RETURN c.name AS name, c.race AS race, c.pagerank AS pagerank,
                        c.weightedDegree AS weightedDegree, c.community AS community
-                ORDER BY c.pagerank DESC
+                ORDER BY coalesce(c.pagerank, 0) DESC
                 LIMIT 10
                 """
             )
@@ -49,6 +55,9 @@ def main() -> int:
             print(f"Entidades: {rows['entities']}")
             print(f"Relacoes: {rows['relationships']}")
             print(f"Personagens: {rows['characters']}")
+            print(f"Documentos RAG: {rows['retrievalDocuments']}")
+            print(f"Text chunks: {rows['textChunks']}")
+            print(f"Falas de script: {rows['dialogueLines']}")
             print(f"Amostra: {', '.join(rows['sample'])}")
             print("\nRelacoes por tipo:")
             for row in rel_rows:
@@ -69,4 +78,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

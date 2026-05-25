@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <h1>GraphRAG em Middle-earth</h1>
-          <p>Neo4j + LOTR interaction graph + LOTRO OWL + Ollama</p>
+          <p>Neo4j + livros/scripts LOTR + LOTRO OWL + Ollama</p>
         </div>
         <div class="stats-strip" id="statsStrip">
           <span>Entidades: --</span>
@@ -40,8 +40,9 @@
             <label class="field compact">
               <span>Modo</span>
               <select id="modeInput">
-                <option value="graph" selected>Graph</option>
-                <option value="baseline">Baseline</option>
+                <option value="hybrid" selected>GraphRAG</option>
+                <option value="rag">RAG</option>
+                <option value="graph">Graph</option>
               </select>
             </label>
           </div>
@@ -64,6 +65,10 @@
             <button id="askButton" class="primary-button" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H7l-3 4zM8 9h8M8 12h5"/></svg>
               Responder
+            </button>
+            <button id="compareButton" class="secondary-button wide-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h7v12H4zM13 6h7v12h-7zM7 9h1M16 9h1M7 12h1M16 12h1"/></svg>
+              Comparar
             </button>
           </div>
 
@@ -102,6 +107,7 @@
             </div>
           </div>
           <article id="answerBox" class="answer-box"></article>
+          <div id="compareResults" class="compare-grid"></div>
           <details class="context-box" open>
             <summary>Contexto recuperado</summary>
             <pre id="contextBox"></pre>

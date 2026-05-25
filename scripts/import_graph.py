@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import re
 import sys
 import time
 import unicodedata
@@ -25,6 +26,21 @@ RAW_DIR = ROOT / "data" / "raw"
 LOTR_CSV = RAW_DIR / "lotr.csv"
 PROPERTIES_CSV = RAW_DIR / "lotr_properties.csv"
 OWL_XML = RAW_DIR / "LOTRORDFXML.owl"
+SNA_DIR = RAW_DIR / "sna_lotr"
+SNA_FILES = {
+    "book_1": SNA_DIR / "LOTR1_book_CLEAN.txt",
+    "book_2": SNA_DIR / "LOTR2_book_CLEAN.txt",
+    "book_3": SNA_DIR / "LOTR3_book_CLEAN.txt",
+    "nodes": SNA_DIR / "nodes.csv",
+    "weighted_edges": SNA_DIR / "weightededges.csv",
+    "chapter_edges": SNA_DIR / "edges_chapters.csv",
+    "scripts": SNA_DIR / "lotr_scripts.csv",
+    "node_sentiment": SNA_DIR / "nodes_with_sentiment.csv",
+    "character_sentiment": SNA_DIR / "sentiment_per_character.csv",
+    "prediction_1": SNA_DIR / "prediction_1.csv",
+    "prediction_2": SNA_DIR / "prediction_2.csv",
+    "prediction_3": SNA_DIR / "prediction_3.csv",
+}
 
 NEO4J_URI = "bolt://neo4j:7687"
 NEO4J_USERNAME = "neo4j"
@@ -90,13 +106,57 @@ DATA_PROPERTY_MAP = {
 }
 
 ALIASES = {
-    "Sam": "Samwise",
-    "Merry": "Meriadoc",
-    "Pippin": "Peregrin",
-    "Elessar": "Aragorn",
-    "Strider": "Aragorn",
-    "Smeagol": "Gollum",
-    "Sméagol": "Gollum",
+    "sam": "Samwise",
+    "samwise gamgee": "Samwise",
+    "merry": "Meriadoc",
+    "meriadoc brandybuck": "Meriadoc",
+    "pippin": "Peregrin",
+    "peregrin took": "Peregrin",
+    "elessar": "Aragorn",
+    "strider": "Aragorn",
+    "smeagol": "Gollum",
+    "sméagol": "Gollum",
+    "barliman": "Barliman Butterbur",
+    "farmer maggot": "Maggot",
+    "gaffer": "Hamfast Gamgee",
+    "rosie": "Rosie Cotton",
+    "sandyman": "Ted Sandyman",
+    "witch king": "Witch-king of Angmar",
+    "witch-king": "Witch-king of Angmar",
+    "mouth of sauron": "Mouth of Sauron",
+}
+
+BOOK_SOURCES = [
+    ("lotr1", "The Fellowship of the Ring", SNA_FILES["book_1"]),
+    ("lotr2", "The Two Towers", SNA_FILES["book_2"]),
+    ("lotr3", "The Return of the King", SNA_FILES["book_3"]),
+]
+
+MOVIE_ORDER = {
+    "The Fellowship of the Ring": 1,
+    "The Two Towers": 2,
+    "The Return of the King": 3,
+}
+
+STOP_MENTION_TERMS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "he",
+    "i",
+    "in",
+    "it",
+    "man",
+    "men",
+    "no",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "we",
 }
 
 
@@ -107,6 +167,34 @@ class EntityDraft:
     aliases: set[str] = field(default_factory=set)
     sources: set[str] = field(default_factory=set)
     props: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ChapterDraft:
+    id: str
+    title: str
+    book_id: str
+    book_title: str
+    local_index: int
+    global_index: int
+    sentiment: float | None = None
+
+
+@dataclass
+class TextDocumentDraft:
+    id: str
+    labels: set[str]
+    text: str
+    source_type: str
+    source_title: str
+    sequence: int
+    mentions: set[str] = field(default_factory=set)
+    book_id: str | None = None
+    chapter_id: str | None = None
+    chapter_title: str | None = None
+    movie_id: str | None = None
+    speaker: str | None = None
+    line_number: int | None = None
 
 
 def getenv(name: str, default: str) -> str:
@@ -121,10 +209,41 @@ def normalize_text(value: str) -> str:
     return value.strip()
 
 
+def normalize_key(value: str) -> str:
+    value = normalize_text(value).casefold()
+    value = re.sub(r"[^a-z0-9 ]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def title_name(value: str) -> str:
+    titled = value.strip().title()
+    for source, target in {
+        " Of ": " of ",
+        " The ": " the ",
+        " And ": " and ",
+        " Ii": " II",
+        " Iii": " III",
+    }.items():
+        titled = titled.replace(source, target)
+    return titled
+
+
+def missing_name(value: str | None) -> bool:
+    if value is None:
+        return True
+    return normalize_key(value) in {"", "na", "n a", "nan", "none", "null"}
+
+
 def canonical_name(value: str) -> str:
     cleaned = value.strip()
-    ascii_key = normalize_text(cleaned)
-    return ALIASES.get(cleaned) or ALIASES.get(ascii_key) or cleaned
+    alias = ALIASES.get(cleaned) or ALIASES.get(normalize_text(cleaned)) or ALIASES.get(normalize_key(cleaned))
+    if alias:
+        return alias
+    if cleaned.isupper():
+        return title_name(cleaned)
+    if cleaned.islower():
+        return title_name(cleaned)
+    return cleaned
 
 
 def local_name(uri: Any) -> str:
@@ -200,7 +319,8 @@ def add_entity(
 
 
 def ensure_files() -> None:
-    missing = [path for path in [LOTR_CSV, PROPERTIES_CSV, OWL_XML] if not path.exists()]
+    required = [LOTR_CSV, PROPERTIES_CSV, OWL_XML, *SNA_FILES.values()]
+    missing = [path for path in required if not path.exists()]
     if missing:
         missing_text = ", ".join(str(path.relative_to(ROOT)) for path in missing)
         raise RuntimeError(f"arquivos ausentes: {missing_text}. Rode `make data`.")
@@ -374,6 +494,163 @@ def read_properties(entities: dict[str, EntityDraft]) -> list[dict[str, Any]]:
     return rels
 
 
+def read_sna_nodes(entities: dict[str, EntityDraft]) -> list[dict[str, Any]]:
+    rels: list[dict[str, Any]] = []
+    with SNA_FILES["nodes"].open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            raw_name = (row.get("Character") or "").strip()
+            if missing_name(raw_name):
+                continue
+            name = canonical_name(raw_name)
+            race = (row.get("Race") or "").strip()
+            gender = (row.get("Gender") or "").strip()
+            props = {"race": race, "gender": gender, "snaIndex": row.get("Index")}
+            add_entity(
+                entities,
+                name,
+                {"Character"},
+                "sna_lotr_nodes",
+                aliases={raw_name},
+                props=props,
+            )
+            if race:
+                race_name = title_name(race)
+                add_entity(entities, race_name, {"Race"}, "sna_lotr_nodes", props={"kind": "Race"})
+                rels.append(
+                    {
+                        "source": name,
+                        "target": race_name,
+                        "type": "HAS_RACE",
+                        "props": {"sourceDataset": "sna_lotr_nodes"},
+                    }
+                )
+    return rels
+
+
+def read_sna_weighted_edges(entities: dict[str, EntityDraft]) -> list[dict[str, Any]]:
+    rels: list[dict[str, Any]] = []
+    with SNA_FILES["weighted_edges"].open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            source_raw = (row.get("From") or "").strip()
+            target_raw = (row.get("To") or "").strip()
+            if missing_name(source_raw) or missing_name(target_raw):
+                continue
+            source = canonical_name(source_raw)
+            target = canonical_name(target_raw)
+            if source == target:
+                continue
+            weight = safe_float(row.get("weight"), default=1.0)
+            add_entity(entities, source, {"Character"}, "sna_lotr_weightededges", aliases={source_raw})
+            add_entity(entities, target, {"Character"}, "sna_lotr_weightededges", aliases={target_raw})
+            rels.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": "CO_OCCURS_WITH",
+                    "props": {"weight": weight, "sourceDataset": "sna_lotr_weightededges"},
+                }
+            )
+    return rels
+
+
+def read_sna_sentiment(entities: dict[str, EntityDraft]) -> None:
+    if SNA_FILES["node_sentiment"].exists():
+        with SNA_FILES["node_sentiment"].open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                raw_name = (row.get("Character") or "").strip()
+                if missing_name(raw_name):
+                    continue
+                name = canonical_name(raw_name)
+                entity = add_entity(entities, name, {"Character"}, "sna_lotr_sentiment", aliases={raw_name})
+                total_words = safe_float(row.get("Total_words"), default=0.0)
+                avg_sent = safe_float(row.get("Avg_sent"), default=0.0)
+                entity.props["scriptWordCount"] = total_words
+                entity.props["scriptAvgSentiment"] = avg_sent
+
+    if SNA_FILES["character_sentiment"].exists():
+        with SNA_FILES["character_sentiment"].open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                raw_name = (row.get("Character") or "").strip()
+                if missing_name(raw_name):
+                    continue
+                name = canonical_name(raw_name)
+                entity = add_entity(entities, name, {"Character"}, "sna_lotr_character_sentiment", aliases={raw_name})
+                for key, prop_name in {
+                    "Words_LOTR1": "wordsLOTR1",
+                    "Words_LOTR2": "wordsLOTR2",
+                    "Words_LOTR3": "wordsLOTR3",
+                    "Sent_LOTR1": "sentimentLOTR1",
+                    "Sent_LOTR2": "sentimentLOTR2",
+                    "Sent_LOTR3": "sentimentLOTR3",
+                    "Avg_sent": "avgSentiment",
+                    "Total_words": "totalWords",
+                }.items():
+                    entity.props[prop_name] = safe_float(row.get(key), default=0.0)
+
+
+def read_sna_predictions(entities: dict[str, EntityDraft]) -> list[dict[str, Any]]:
+    rels: list[dict[str, Any]] = []
+    prediction_specs = [
+        ("prediction_1", "existing_link"),
+        ("prediction_2", "jaccard"),
+        ("prediction_3", "adamic_adar"),
+    ]
+    for file_key, method in prediction_specs:
+        with SNA_FILES[file_key].open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                source_raw = (row.get("Source") or "").strip()
+                target_raw = (row.get("Target") or "").strip()
+                if missing_name(source_raw) or missing_name(target_raw):
+                    continue
+                source = canonical_name(source_raw)
+                target = canonical_name(target_raw)
+                if source == target:
+                    continue
+                score = first_float(
+                    row,
+                    ["Jaccard Coefficient", "Adamic Adar", "Adamic Adar Score", "score", "Score"],
+                    default=1.0,
+                )
+                add_entity(entities, source, {"Character"}, f"sna_lotr_{file_key}", aliases={source_raw})
+                add_entity(entities, target, {"Character"}, f"sna_lotr_{file_key}", aliases={target_raw})
+                rels.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        "type": "PREDICTED_LINK",
+                        "props": {
+                            "confidence": float(score),
+                            "method": method,
+                            "sourceDataset": f"sna_lotr_{file_key}",
+                        },
+                    }
+                )
+    return rels
+
+
+def safe_float(value: Any, default: float | None = None) -> float | None:
+    if value in (None, ""):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
+def first_float(row: dict[str, Any], keys: list[str], default: float) -> float:
+    for key in keys:
+        value = safe_float(row.get(key), default=None)
+        if value is not None:
+            return value
+    return default
+
+
 def infer_labels(types: set[str]) -> set[str]:
     labels: set[str] = {"OntologyEntity"}
     if types & CHARACTER_TYPES:
@@ -448,6 +725,239 @@ def read_ontology(entities: dict[str, EntityDraft]) -> list[dict[str, Any]]:
     return rels
 
 
+def load_chapter_sentiment() -> dict[int, float]:
+    sentiments: dict[int, float] = {}
+    chapter_file = SNA_DIR / "nodes_chapter_sent.csv"
+    if not chapter_file.exists():
+        return sentiments
+    with chapter_file.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            chapter = (row.get("Chapter") or "").strip()
+            match = re.search(r"(\d+)", chapter)
+            if not match:
+                continue
+            sentiment = safe_float(row.get("SentimentScore"), default=None)
+            if sentiment is not None:
+                sentiments[int(match.group(1))] = sentiment
+    return sentiments
+
+
+def chapter_sections(book_id: str, book_title: str, path: Path, start_global: int) -> tuple[list[ChapterDraft], list[dict[str, Any]], int]:
+    chapter_pattern = re.compile(r"^\s*Chapter\s+(\d+)\s*\.?\s*(.*)$", re.IGNORECASE)
+    sentiments = load_chapter_sentiment()
+    chapters: list[ChapterDraft] = []
+    sections: list[dict[str, Any]] = []
+    current_lines: list[str] = []
+    current_chapter: ChapterDraft | None = None
+    local_count = 0
+    global_count = start_global
+
+    def flush() -> None:
+        nonlocal current_lines
+        text = "\n".join(current_lines).strip()
+        if text:
+            sections.append({"chapter": current_chapter, "text": text})
+        current_lines = []
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = chapter_pattern.match(line)
+        if match:
+            flush()
+            local_count += 1
+            global_count += 1
+            title = f"Chapter {match.group(1)}"
+            suffix = match.group(2).strip()
+            if suffix:
+                title = f"{title}. {suffix}"
+            chapter = ChapterDraft(
+                id=f"{book_id}_chapter_{local_count:03d}",
+                title=title,
+                book_id=book_id,
+                book_title=book_title,
+                local_index=local_count,
+                global_index=global_count,
+                sentiment=sentiments.get(global_count),
+            )
+            chapters.append(chapter)
+            current_chapter = chapter
+        current_lines.append(line)
+
+    flush()
+    return chapters, sections, global_count
+
+
+def chunk_text(text: str, chunk_size: int = 360, overlap: int = 60) -> list[str]:
+    words = re.findall(r"\S+", text)
+    if not words:
+        return []
+    chunks: list[str] = []
+    step = max(1, chunk_size - overlap)
+    for start in range(0, len(words), step):
+        piece = words[start : start + chunk_size]
+        if len(piece) < 80 and chunks:
+            break
+        chunks.append(" ".join(piece))
+        if start + chunk_size >= len(words):
+            break
+    return chunks
+
+
+def build_mention_aliases(entities: dict[str, EntityDraft]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for entity in entities.values():
+        if not entity.labels & {"Character", "Weapon", "Place", "Language", "OntologyEntity"}:
+            continue
+        names = {entity.name, *entity.aliases}
+        for name in names:
+            key = normalize_key(name)
+            if len(key) < 4 or key in STOP_MENTION_TERMS:
+                continue
+            pairs.append((entity.name, key))
+    pairs.sort(key=lambda item: (-len(item[1]), item[1]))
+    return pairs
+
+
+def detect_mentions(text: str, aliases: list[tuple[str, str]], limit: int = 32) -> set[str]:
+    normalized = f" {normalize_key(text)} "
+    mentions: set[str] = set()
+    for entity_name, alias_key in aliases:
+        if f" {alias_key} " in normalized:
+            mentions.add(entity_name)
+            if len(mentions) >= limit:
+                break
+    return mentions
+
+
+def slug(value: str) -> str:
+    key = normalize_key(value)
+    return key.replace(" ", "_") or "unknown"
+
+
+def build_text_corpus(
+    entities: dict[str, EntityDraft],
+) -> tuple[list[dict[str, Any]], list[ChapterDraft], list[TextDocumentDraft], list[dict[str, Any]]]:
+    aliases = build_mention_aliases(entities)
+    books = [
+        {
+            "id": book_id,
+            "title": title,
+            "order": index + 1,
+            "sourceDataset": "sna_lotr_books",
+        }
+        for index, (book_id, title, _path) in enumerate(BOOK_SOURCES)
+    ]
+    chapters: list[ChapterDraft] = []
+    documents: list[TextDocumentDraft] = []
+    movies: dict[str, dict[str, Any]] = {}
+    global_chapter = 0
+    sequence = 0
+
+    for book_id, book_title, path in BOOK_SOURCES:
+        book_chapters, sections, global_chapter = chapter_sections(book_id, book_title, path, global_chapter)
+        chapters.extend(book_chapters)
+        for section in sections:
+            chapter = section["chapter"]
+            for chunk in chunk_text(section["text"]):
+                sequence += 1
+                mentions = detect_mentions(chunk, aliases)
+                documents.append(
+                    TextDocumentDraft(
+                        id=f"{book_id}_chunk_{sequence:05d}",
+                        labels={"TextChunk"},
+                        text=chunk,
+                        source_type="book",
+                        source_title=book_title,
+                        sequence=sequence,
+                        mentions=mentions,
+                        book_id=book_id,
+                        chapter_id=chapter.id if chapter else None,
+                        chapter_title=chapter.title if chapter else None,
+                    )
+                )
+
+    with SNA_FILES["scripts"].open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for idx, row in enumerate(reader, start=1):
+            raw_speaker = (row.get("char") or "").strip()
+            text = clean_dialogue(row.get("dialog") or "")
+            movie_title = (row.get("movie") or "").strip()
+            if not text or missing_name(raw_speaker):
+                continue
+            speaker = canonical_name(raw_speaker)
+            add_entity(entities, speaker, {"Character"}, "sna_lotr_scripts", aliases={raw_speaker})
+            movie_id = slug(movie_title)
+            movies.setdefault(
+                movie_id,
+                {
+                    "id": movie_id,
+                    "title": movie_title,
+                    "order": MOVIE_ORDER.get(movie_title, 99),
+                    "sourceDataset": "sna_lotr_scripts",
+                },
+            )
+            mentions = detect_mentions(text, aliases)
+            mentions.add(speaker)
+            line_number = parse_int(row.get("") or row.get("Index"))
+            sequence += 1
+            documents.append(
+                TextDocumentDraft(
+                    id=f"dialogue_{movie_id}_{idx:05d}",
+                    labels={"DialogueLine"},
+                    text=text,
+                    source_type="dialogue",
+                    source_title=movie_title,
+                    sequence=sequence,
+                    mentions=mentions,
+                    movie_id=movie_id,
+                    speaker=speaker,
+                    line_number=line_number,
+                )
+            )
+
+    return books, chapters, documents, list(movies.values())
+
+
+def clean_dialogue(value: str) -> str:
+    value = value.replace("\xa0", " ")
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def parse_int(value: Any) -> int | None:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def chapter_similarity_relationships(chapters: list[ChapterDraft]) -> list[dict[str, Any]]:
+    by_global = {chapter.global_index: chapter.id for chapter in chapters}
+    rels: list[dict[str, Any]] = []
+    with SNA_FILES["chapter_edges"].open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            source_number = chapter_number(row.get("From"))
+            target_number = chapter_number(row.get("To"))
+            if source_number not in by_global or target_number not in by_global:
+                continue
+            if source_number == target_number:
+                continue
+            rels.append(
+                {
+                    "source": by_global[source_number],
+                    "target": by_global[target_number],
+                    "weight": safe_float(row.get("weight"), default=1.0) or 1.0,
+                }
+            )
+    return rels
+
+
+def chapter_number(value: Any) -> int | None:
+    match = re.search(r"(\d+)", str(value or ""))
+    return int(match.group(1)) if match else None
+
+
 def wait_for_neo4j(driver: Any, attempts: int = 30) -> None:
     for attempt in range(1, attempts + 1):
         try:
@@ -469,6 +979,10 @@ def write_graph(
     password: str,
     entities: dict[str, EntityDraft],
     rels: list[dict[str, Any]],
+    books: list[dict[str, Any]],
+    chapters: list[ChapterDraft],
+    documents: list[TextDocumentDraft],
+    movies: list[dict[str, Any]],
     reset: bool,
 ) -> None:
     driver = GraphDatabase.driver(uri, auth=(username, password))
@@ -496,12 +1010,88 @@ def write_graph(
             }
         )
 
+    book_rows = [{"id": row["id"], "props": safe_props(row)} for row in books]
+    movie_rows = [{"id": row["id"], "props": safe_props(row)} for row in movies]
+    chapter_rows = [
+        {
+            "id": chapter.id,
+            "bookId": chapter.book_id,
+            "props": safe_props(
+                {
+                    "id": chapter.id,
+                    "title": chapter.title,
+                    "bookId": chapter.book_id,
+                    "bookTitle": chapter.book_title,
+                    "localIndex": chapter.local_index,
+                    "globalIndex": chapter.global_index,
+                    "sentiment": chapter.sentiment,
+                    "sourceDataset": "sna_lotr_books",
+                }
+            ),
+        }
+        for chapter in chapters
+    ]
+    document_rows = [
+        {
+            "id": doc.id,
+            "kind": "DialogueLine" if "DialogueLine" in doc.labels else "TextChunk",
+            "bookId": doc.book_id,
+            "chapterId": doc.chapter_id,
+            "movieId": doc.movie_id,
+            "speaker": doc.speaker,
+            "props": safe_props(
+                {
+                    "id": doc.id,
+                    "text": doc.text,
+                    "sourceType": doc.source_type,
+                    "sourceTitle": doc.source_title,
+                    "sequence": doc.sequence,
+                    "chapterTitle": doc.chapter_title,
+                    "bookId": doc.book_id,
+                    "chapterId": doc.chapter_id,
+                    "movieId": doc.movie_id,
+                    "speaker": doc.speaker,
+                    "lineNumber": doc.line_number,
+                    "mentionCount": len(doc.mentions),
+                    "sourceDataset": "sna_lotr_books"
+                    if doc.source_type == "book"
+                    else "sna_lotr_scripts",
+                }
+            ),
+        }
+        for doc in documents
+    ]
+    mention_rows = [
+        {"documentId": doc.id, "entity": entity}
+        for doc in documents
+        for entity in sorted(doc.mentions)
+        if entity in entities
+    ]
+    speaker_rows = [
+        {"documentId": doc.id, "speaker": doc.speaker}
+        for doc in documents
+        if doc.speaker and doc.speaker in entities
+    ]
+    chapter_edge_rows = chapter_similarity_relationships(chapters)
+
     with driver.session() as session:
         if reset:
             session.run("MATCH (n) DETACH DELETE n").consume()
 
         session.run(
             "CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE"
+        ).consume()
+        session.run(
+            "CREATE CONSTRAINT book_id IF NOT EXISTS FOR (b:Book) REQUIRE b.id IS UNIQUE"
+        ).consume()
+        session.run(
+            "CREATE CONSTRAINT movie_id IF NOT EXISTS FOR (m:Movie) REQUIRE m.id IS UNIQUE"
+        ).consume()
+        session.run(
+            "CREATE CONSTRAINT chapter_id IF NOT EXISTS FOR (c:Chapter) REQUIRE c.id IS UNIQUE"
+        ).consume()
+        session.run(
+            "CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:RetrievalDocument) REQUIRE d.id IS UNIQUE"
         ).consume()
 
         session.run(
@@ -522,31 +1112,159 @@ def write_graph(
         ).consume()
 
         for rel_type, rows in rels_by_type.items():
-            session.run(
-                f"""
-                UNWIND $rows AS row
-                MATCH (a:Entity {{name: row.source}})
-                MATCH (b:Entity {{name: row.target}})
-                MERGE (a)-[r:{rel_type}]->(b)
-                SET r += row.props
-                """,
-                rows=rows,
-            ).consume()
+            if rel_type == "PREDICTED_LINK":
+                session.run(
+                    """
+                    UNWIND $rows AS row
+                    MATCH (a:Entity {name: row.source})
+                    MATCH (b:Entity {name: row.target})
+                    MERGE (a)-[r:PREDICTED_LINK {method: row.props.method}]->(b)
+                    SET r += row.props
+                    """,
+                    rows=rows,
+                ).consume()
+            else:
+                session.run(
+                    f"""
+                    UNWIND $rows AS row
+                    MATCH (a:Entity {{name: row.source}})
+                    MATCH (b:Entity {{name: row.target}})
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    SET r += row.props
+                    """,
+                    rows=rows,
+                ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MERGE (b:Book {id: row.id})
+            SET b += row.props
+            """,
+            rows=book_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MERGE (m:Movie {id: row.id})
+            SET m += row.props
+            """,
+            rows=movie_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MERGE (c:Chapter {id: row.id})
+            SET c += row.props
+            WITH c, row
+            MATCH (b:Book {id: row.bookId})
+            MERGE (c)-[:IN_BOOK {sourceDataset: 'sna_lotr_books'}]->(b)
+            """,
+            rows=chapter_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MERGE (d:RetrievalDocument {id: row.id})
+            SET d += row.props
+            FOREACH (_ IN CASE WHEN row.kind = 'TextChunk' THEN [1] ELSE [] END | SET d:TextChunk)
+            FOREACH (_ IN CASE WHEN row.kind = 'DialogueLine' THEN [1] ELSE [] END | SET d:DialogueLine)
+            """,
+            rows=document_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (d:RetrievalDocument {id: row.id})
+            MATCH (b:Book {id: row.bookId})
+            MERGE (d)-[:IN_BOOK {sourceDataset: 'sna_lotr_books'}]->(b)
+            """,
+            rows=[row for row in document_rows if row["bookId"]],
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (d:RetrievalDocument {id: row.id})
+            MATCH (c:Chapter {id: row.chapterId})
+            MERGE (d)-[:IN_CHAPTER {sourceDataset: 'sna_lotr_books'}]->(c)
+            """,
+            rows=[row for row in document_rows if row["chapterId"]],
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (d:RetrievalDocument {id: row.id})
+            MATCH (m:Movie {id: row.movieId})
+            MERGE (d)-[:IN_MOVIE {sourceDataset: 'sna_lotr_scripts'}]->(m)
+            """,
+            rows=[row for row in document_rows if row["movieId"]],
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (d:RetrievalDocument {id: row.documentId})
+            MATCH (e:Entity {name: row.entity})
+            MERGE (d)-[:MENTIONS {sourceDataset: 'sna_lotr_text'}]->(e)
+            """,
+            rows=mention_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (d:RetrievalDocument {id: row.documentId})
+            MATCH (e:Entity {name: row.speaker})
+            MERGE (e)-[:SPEAKS_LINE {sourceDataset: 'sna_lotr_scripts'}]->(d)
+            """,
+            rows=speaker_rows,
+        ).consume()
+
+        session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (a:Chapter {id: row.source})
+            MATCH (b:Chapter {id: row.target})
+            MERGE (a)-[r:SIMILAR_CHAPTER]->(b)
+            SET r.weight = row.weight,
+                r.sourceDataset = 'sna_lotr_edges_chapters'
+            """,
+            rows=chapter_edge_rows,
+        ).consume()
 
         node_count = session.run("MATCH (n:Entity) RETURN count(n) AS count").single()["count"]
         rel_count = session.run("MATCH ()-[r]->() RETURN count(r) AS count").single()["count"]
+        doc_count = session.run("MATCH (d:RetrievalDocument) RETURN count(d) AS count").single()["count"]
 
     driver.close()
-    print(f"importado: {node_count} entidades, {rel_count} relacoes")
+    print(f"importado: {node_count} entidades, {doc_count} documentos, {rel_count} relacoes")
 
 
-def build_graph() -> tuple[dict[str, EntityDraft], list[dict[str, Any]]]:
+def build_graph() -> tuple[
+    dict[str, EntityDraft],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[ChapterDraft],
+    list[TextDocumentDraft],
+    list[dict[str, Any]],
+]:
     entities: dict[str, EntityDraft] = {}
     rels: list[dict[str, Any]] = []
     rels.extend(read_interactions(entities))
     rels.extend(read_properties(entities))
+    rels.extend(read_sna_nodes(entities))
+    rels.extend(read_sna_weighted_edges(entities))
+    read_sna_sentiment(entities)
+    rels.extend(read_sna_predictions(entities))
     rels.extend(read_ontology(entities))
-    return entities, rels
+    books, chapters, documents, movies = build_text_corpus(entities)
+    return entities, rels, books, chapters, documents, movies
 
 
 def main() -> int:
@@ -556,13 +1274,17 @@ def main() -> int:
 
     try:
         ensure_files()
-        entities, rels = build_graph()
+        entities, rels, books, chapters, documents, movies = build_graph()
         write_graph(
             getenv("NEO4J_URI", NEO4J_URI),
             getenv("NEO4J_USERNAME", NEO4J_USERNAME),
             getenv("NEO4J_PASSWORD", NEO4J_PASSWORD),
             entities,
             rels,
+            books,
+            chapters,
+            documents,
+            movies,
             reset=not args.no_reset,
         )
     except Exception as exc:

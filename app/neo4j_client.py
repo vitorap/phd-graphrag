@@ -26,6 +26,8 @@ SEMANTIC_REL_TYPES = [
     "HAS_FAMILY_NAME",
     "LOCATED_IN",
     "COUSIN_OF",
+    "CO_OCCURS_WITH",
+    "PREDICTED_LINK",
 ]
 
 
@@ -58,7 +60,18 @@ class Neo4jClient:
                 MATCH ()-[r]->()
                 WITH entities, count(r) AS relationships
                 MATCH (c:Character)
-                RETURN entities, relationships, count(c) AS characters
+                WITH entities, relationships, count(c) AS characters
+                MATCH (d:RetrievalDocument)
+                WITH entities, relationships, characters, count(d) AS retrievalDocuments
+                MATCH (t:TextChunk)
+                WITH entities, relationships, characters, retrievalDocuments, count(t) AS textChunks
+                MATCH (l:DialogueLine)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, count(l) AS dialogueLines
+                MATCH (ch:Chapter)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines, count(ch) AS chapters
+                MATCH (b:Book)
+                RETURN entities, relationships, characters, retrievalDocuments, textChunks,
+                       dialogueLines, chapters, count(b) AS books
                 """
             ).single()
             rels = session.run(
@@ -73,7 +86,7 @@ class Neo4jClient:
                 MATCH (c:Character)
                 RETURN c.name AS name, c.race AS race, c.pagerank AS pagerank,
                        c.weightedDegree AS weightedDegree, c.community AS community
-                ORDER BY c.pagerank DESC
+                ORDER BY coalesce(c.pagerank, 0) DESC
                 LIMIT 12
                 """
             )
@@ -81,6 +94,11 @@ class Neo4jClient:
                 "entities": counts["entities"] if counts else 0,
                 "relationships": counts["relationships"] if counts else 0,
                 "characters": counts["characters"] if counts else 0,
+                "retrievalDocuments": counts["retrievalDocuments"] if counts else 0,
+                "textChunks": counts["textChunks"] if counts else 0,
+                "dialogueLines": counts["dialogueLines"] if counts else 0,
+                "chapters": counts["chapters"] if counts else 0,
+                "books": counts["books"] if counts else 0,
                 "relationshipTypes": [dict(row) for row in rels],
                 "topCharacters": [dict(row) for row in top],
             }
@@ -105,7 +123,7 @@ class Neo4jClient:
                 RETURN c.name AS name, c.race AS race, c.gender AS gender,
                        c.pagerank AS pagerank, c.weightedDegree AS weightedDegree,
                        c.community AS community
-                ORDER BY c.pagerank DESC
+                ORDER BY coalesce(c.pagerank, 0) DESC
                 LIMIT $limit
                 """,
                 limit=limit,
@@ -127,6 +145,8 @@ class Neo4jClient:
                 WITH a, r, b
                 ORDER BY CASE type(r)
                     WHEN 'INTERACTS_WITH' THEN coalesce(r.weight, 1)
+                    WHEN 'CO_OCCURS_WITH' THEN coalesce(r.weight, 1) * 0.9
+                    WHEN 'PREDICTED_LINK' THEN coalesce(r.confidence, 0)
                     ELSE 1
                 END DESC
                 LIMIT $limit
@@ -153,6 +173,8 @@ class Neo4jClient:
                     targetName: endNode(r).name,
                     type: type(r),
                     weight: coalesce(r.weight, 1),
+                    confidence: r.confidence,
+                    method: r.method,
                     sourceDataset: r.sourceDataset
                   }] AS edges
                 """,
@@ -171,6 +193,8 @@ class Neo4jClient:
                 MATCH (seed:Entity)
                 WHERE seed.name IN $seeds
                 MATCH p = (seed)-[*1..{hops}]-(n:Entity)
+                WHERE all(rel IN relationships(p)
+                          WHERE type(rel) <> 'PREDICTED_LINK' OR coalesce(rel.confidence, 0) >= 0.25)
                 WITH p, n
                 ORDER BY length(p), coalesce(n.pagerank, 0) DESC
                 LIMIT $limit
@@ -201,6 +225,8 @@ class Neo4jClient:
                     targetName: endNode(r).name,
                     type: type(r),
                     weight: coalesce(r.weight, 1),
+                    confidence: r.confidence,
+                    method: r.method,
                     sourceDataset: r.sourceDataset
                   }}] AS edges
                 """,
@@ -217,24 +243,78 @@ class Neo4jClient:
                 MATCH (a:Entity {{name: $source}})
                 MATCH (b:Entity {{name: $target}})
                 MATCH p = shortestPath((a)-[*..{max_depth}]-(b))
+                WHERE all(rel IN relationships(p)
+                          WHERE type(rel) <> 'PREDICTED_LINK' OR coalesce(rel.confidence, 0) >= 0.25)
                 RETURN [n IN nodes(p) | n.name] AS names
                 """,
                 source=source,
                 target=target,
             ).single()
-            return row["names"] if row else []
+            return [name for name in (row["names"] if row else []) if name]
 
     def top_neighbors(self, name: str, limit: int = 10) -> list[dict[str, Any]]:
         with self.driver.session() as session:
             rows = session.run(
                 """
                 MATCH (:Entity {name: $name})-[r]-(n:Entity)
-                RETURN n.name AS name, type(r) AS relation, coalesce(r.weight, 1) AS weight,
+                RETURN n.name AS name, type(r) AS relation, coalesce(r.weight, r.confidence, 1) AS weight,
                        n.kind AS kind, n.race AS race, n.pagerank AS pagerank
                 ORDER BY weight DESC, coalesce(n.pagerank, 0) DESC
                 LIMIT $limit
                 """,
                 name=name,
+                limit=limit,
+            )
+            return [dict(row) for row in rows]
+
+    def retrieval_documents(self, limit: int = 6000) -> list[dict[str, Any]]:
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (d:RetrievalDocument)
+                OPTIONAL MATCH (d)-[:MENTIONS]->(e:Entity)
+                RETURN d.id AS id,
+                       labels(d) AS labels,
+                       d.text AS text,
+                       d.sourceType AS sourceType,
+                       d.sourceTitle AS sourceTitle,
+                       d.chapterTitle AS chapterTitle,
+                       d.sequence AS sequence,
+                       d.speaker AS speaker,
+                       d.lineNumber AS lineNumber,
+                       collect(DISTINCT e.name) AS mentions
+                ORDER BY d.sequence
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            return [dict(row) for row in rows]
+
+    def documents_for_entities(self, names: list[str], limit: int = 12) -> list[dict[str, Any]]:
+        if not names:
+            return []
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (d:RetrievalDocument)-[:MENTIONS]->(e:Entity)
+                WHERE e.name IN $names
+                WITH d, count(DISTINCT e) AS entityHits
+                OPTIONAL MATCH (d)-[:MENTIONS]->(m:Entity)
+                RETURN d.id AS id,
+                       labels(d) AS labels,
+                       d.text AS text,
+                       d.sourceType AS sourceType,
+                       d.sourceTitle AS sourceTitle,
+                       d.chapterTitle AS chapterTitle,
+                       d.sequence AS sequence,
+                       d.speaker AS speaker,
+                       d.lineNumber AS lineNumber,
+                       entityHits,
+                       collect(DISTINCT m.name) AS mentions
+                ORDER BY entityHits DESC, d.sequence
+                LIMIT $limit
+                """,
+                names=names,
                 limit=limit,
             )
             return [dict(row) for row in rows]
@@ -283,4 +363,3 @@ class Neo4jClient:
         if "Race" in labels:
             return "race"
         return "entity"
-

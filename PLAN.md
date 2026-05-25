@@ -12,6 +12,7 @@ GraphRAG e uma ponte natural entre Knowledge Graphs, LLMs e GNNs: em vez de recu
 - Makefile com comandos de apresentacao.
 - README com roteiro da aula.
 - Scripts reproduziveis para download, ingestao, metricas e perguntas.
+- Comparacao explicita entre RAG textual, Graph e GraphRAG hibrido.
 
 ## Fase 1: Documentacao e Roteiro
 
@@ -51,6 +52,9 @@ Tarefas:
   - `lotr.csv`
   - `lotr_properties.csv`
   - `LOTROntology.owl`
+  - textos completos do SNA_LOTR
+  - scripts dos filmes
+  - redes ponderadas, capitulos, sentimento e predicoes
 - Guardar tudo em `data/raw/`.
 - Validar tamanho minimo dos arquivos.
 
@@ -67,8 +71,14 @@ Tarefas:
 - Criar constraints.
 - Limpar grafo quando `seed` rodar.
 - Importar personagens e aliases do Raphtory.
+- Importar personagens e atributos do SNA_LOTR.
 - Agregar `INTERACTS_WITH` por par de personagens.
+- Importar `CO_OCCURS_WITH` ponderado.
+- Importar `PREDICTED_LINK` como camada de link prediction.
 - Importar raca/genero.
+- Importar `Book`, `Chapter`, `Movie`, `TextChunk` e `DialogueLine`.
+- Ligar textos e falas a entidades por `MENTIONS`.
+- Ligar falas a personagens por `SPEAKS_LINE`.
 - Parsear OWL com `rdflib`.
 - Criar entidades semanticas.
 - Criar relacoes semanticas.
@@ -91,9 +101,12 @@ Tarefas:
 
 - Resolver entidades a partir da pergunta.
 - Recuperar subgrafo por `hops`.
+- Recuperar chunks/falas por BM25.
+- Oferecer modos `rag`, `graph` e `hybrid`.
 - Gerar contexto textual com:
   - entidades detectadas;
   - relacoes recuperadas;
+  - evidencias textuais recuperadas;
   - top vizinhos;
   - caminhos quando houver duas entidades;
   - metricas relevantes.
@@ -102,7 +115,8 @@ Tarefas:
 
 Critério de pronto:
 
-- `make ask Q="Como Frodo se conecta a Sauron?"` retorna contexto e resposta.
+- `make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid` retorna contexto e resposta.
+- `make compare Q="Qual a relação de Frodo com Sauron?"` mostra as tres estrategias.
 
 ## Fase 6: App Visual
 
@@ -113,6 +127,7 @@ Tarefas:
 - Criar endpoint de estatisticas.
 - Criar endpoint de subgrafo.
 - Criar endpoint de pergunta.
+- Criar endpoint de comparacao.
 - Criar UI com:
   - painel de pergunta;
   - seletor de hops;
@@ -120,6 +135,7 @@ Tarefas:
   - entidades detectadas;
   - contexto recuperado;
   - resposta do LLM;
+  - comparacao lado a lado entre RAG, Graph e GraphRAG;
   - stats do grafo.
 
 Critério de pronto:
@@ -153,16 +169,18 @@ Critério de pronto:
 6. Abrir Neo4j Browser.
 7. Abrir app.
 8. Perguntar sobre Frodo/Sauron.
-9. Alterar hops.
-10. Conectar com k-hop/message passing.
+9. Rodar comparacao RAG vs Graph vs GraphRAG.
+10. Alterar hops.
+11. Conectar com k-hop/message passing.
 
 ## Riscos e Mitigacoes
 
 - **Ollama indisponivel**: app mostra contexto recuperado e fallback sem travar.
 - **Internet indisponivel**: rodar `make data` antes da aula.
 - **Neo4j lento na primeira subida**: healthcheck e retry nos scripts.
-- **Dataset pequeno da ontologia**: usar ontologia como camada semantica, nao como grafo principal.
+- **Grafo grande demais para explicar tudo**: usar a UI para focar em Frodo/Sauron e deixar Neo4j para exploracao.
 - **Coocorrencia confundida com relacao real**: explicar no roteiro e separar tipo de aresta.
+- **Predicted links gerando ruido**: manter como tipo separado e explicar como camada de link prediction.
 
 ## Pontos Centrais que Ainda Podem Ser Ajustados
 
@@ -171,3 +189,16 @@ Critério de pronto:
 - Qual modelo Ollama usar no dia.
 - Se o parceiro vai cobrir introducao teorica.
 - Se vale incluir uma comparacao explicita com RAG vetorial simples.
+
+## Fase 8: Enriquecimento Maximo LOTR
+
+Status: concluida.
+
+Tarefas:
+
+- Versionar `data/raw/sna_lotr/` completo.
+- Criar corpus BM25 local sem embeddings externos.
+- Criar `scripts/compare.py`.
+- Atualizar `Makefile` com `MODE` e `make compare`.
+- Atualizar app para exibir comparacao em tres colunas.
+- Validar que a pergunta Frodo/Sauron produz resposta hibrida mais rica que grafo puro.

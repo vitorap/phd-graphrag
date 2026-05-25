@@ -19,7 +19,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Pergunta ao GraphRAG via CLI.")
     parser.add_argument("question", help="pergunta em linguagem natural")
     parser.add_argument("--hops", type=int, default=2, help="profundidade k-hop")
-    parser.add_argument("--mode", default="graph", choices=["graph", "baseline"], help="modo de retrieval")
+    parser.add_argument("--mode", default="hybrid", choices=["rag", "graph", "hybrid", "baseline"], help="modo de retrieval")
     parser.add_argument("--no-llm", action="store_true", help="mostra so contexto recuperado")
     parser.add_argument("--json", action="store_true", help="imprime JSON completo")
     args = parser.parse_args()
