@@ -316,20 +316,20 @@ LECTURE_STEPS = [
         "title": "Uma pergunta, tres recuperacoes",
         "duration": "4 min",
         "mode": "compare",
-        "question": "Como Frodo se conecta a Sauron?",
-        "center": "Frodo",
+        "question": "Por que a queda de Boromir e melhor explicada por texto do que por centralidade?",
+        "center": "Boromir",
         "hops": 2,
         "topK": 8,
-        "demoAction": "Aplicar abre a comparacao. A mesma pergunta vira tres objetos de evidencia: chunks, subgrafo e hibrido.",
+        "demoAction": "Aplicar abre a comparacao. A mesma pergunta separa motivacao narrativa, posicao estrutural e sintese hibrida.",
         "talkingPoints": [
             "RAG, Graph e GraphRAG recuperam evidencias de natureza diferente.",
-            "A pergunta Frodo-Sauron exige relacao estrutural e explicacao narrativa.",
+            "A pergunta sobre Boromir exige conflito interno, pressao do Anel e papel na Fellowship.",
             "A resposta so faz sentido depois de auditar o contexto recuperado.",
         ],
         "methodContrasts": [
-            {"label": "RAG", "text": "Pode recuperar chunks parecidos, mas nao ve caminhos nem arestas."},
-            {"label": "Graph", "text": "Mostra ENEMY_OF, coocorrencia, conectores e caminhos, mas nao explica a cena."},
-            {"label": "GraphRAG", "text": "Usa o subgrafo como filtro/boost e sintetiza evidencias textuais."},
+            {"label": "RAG", "text": "Recupera cenas de fala, tensao e arrependimento."},
+            {"label": "Graph", "text": "Mostra Boromir na rede da Fellowship, mas nao explica motivacao."},
+            {"label": "GraphRAG", "text": "Combina papel estrutural com trechos que sustentam a virada narrativa."},
         ],
         "architecture": {
             "name": "Mapa da aula",
@@ -342,13 +342,13 @@ LECTURE_STEPS = [
             "Depois ligue a sintese com LLM e mostre que ela resume evidencias recuperadas.",
         ],
         "quiz": {
-            "question": "Se o RAG puro recuperar chunks ruins para Frodo-Sauron, qual conclusao e correta?",
+            "question": "Se o grafo mostra Boromir bem conectado, o que ainda falta para explicar sua queda?",
             "options": [
-                {"label": "A relacao nao existe no corpus.", "correct": False, "explanation": "Errado. Falha de retrieval nao prova ausencia global no corpus."},
-                {"label": "A execucao textual nao trouxe evidencia suficiente.", "correct": True, "explanation": "Correto. A conclusao honesta fica limitada aos chunks recuperados."},
-                {"label": "O LLM deve completar com memoria externa.", "correct": False, "explanation": "Errado. Isso quebra a premissa de resposta ancorada."},
+                {"label": "Nada: centralidade ja explica motivacao.", "correct": False, "explanation": "Errado. Posicao estrutural nao revela conflito interno."},
+                {"label": "Evidencia textual sobre intencao, fala e contexto narrativo.", "correct": True, "explanation": "Correto. Motivacao precisa de trechos, nao so arestas."},
+                {"label": "Um embedding maior resolve sem contexto.", "correct": False, "explanation": "Errado. Embedding melhor nao substitui evidencia relevante."},
             ],
-            "answer": "A resposta correta e a segunda: fale sobre a evidencia recuperada, nao sobre o corpus inteiro.",
+            "answer": "A resposta correta e a segunda: centralidade ajuda a localizar Boromir, mas motivacao exige texto.",
         },
     },
     {
@@ -356,19 +356,19 @@ LECTURE_STEPS = [
         "title": "RAG textual para pergunta narrativa",
         "duration": "5 min",
         "mode": "rag",
-        "question": "Por que o Anel importa para Frodo?",
-        "center": "Frodo",
+        "question": "Como Boromir justifica a tentacao de usar o Anel?",
+        "center": "Boromir",
         "topK": 8,
         "demoAction": "Aplicar abre RAG puro. Observe top-k separado para livros e scripts, score cosine e ausencia de boost.",
         "talkingPoints": [
             "A pergunta vira embedding; cada chunk/fala tambem.",
             "O ranking e textual: cosine puro, sem k-hop ou PageRank.",
-            "Esse modo e forte quando a resposta esta em passagens narrativas proximas.",
+            "Esse modo e forte quando a resposta depende de fala, tom e justificativa local.",
         ],
         "methodContrasts": [
-            {"label": "RAG", "text": "Melhor para citar trechos e falas recuperadas."},
-            {"label": "Graph", "text": "Pode mostrar relacoes, mas nao substitui a narrativa."},
-            {"label": "GraphRAG", "text": "Ajuda quando a pergunta tambem exige entidades e conexoes."},
+            {"label": "RAG", "text": "Melhor para recuperar a justificativa textual da tentacao."},
+            {"label": "Graph", "text": "Mostra Boromir ligado a aliados e conflitos, mas nao o argumento dele."},
+            {"label": "GraphRAG", "text": "Ajuda se quisermos ligar a fala ao papel dele na rede."},
         ],
         "architecture": {
             "name": "RAG classico",
@@ -381,13 +381,13 @@ LECTURE_STEPS = [
             "Use sem LLM primeiro; depois ligue a sintese.",
         ],
         "quiz": {
-            "question": "O que o score cosine mede no RAG vetorial?",
+            "question": "Para explicar a tentacao de Boromir, qual evidencia e mais forte?",
             "options": [
-                {"label": "Similaridade entre pergunta e unidade textual.", "correct": True, "explanation": "Correto. Ele mede proximidade no espaco de embeddings."},
-                {"label": "Importancia global do personagem no grafo.", "correct": False, "explanation": "Isso seria metrica estrutural, como PageRank."},
-                {"label": "Veracidade factual da resposta final.", "correct": False, "explanation": "Score de retrieval nao valida a resposta final."},
+                {"label": "Um trecho em que ele racionaliza o uso do Anel.", "correct": True, "explanation": "Correto. A pergunta e narrativa e pede justificativa textual."},
+                {"label": "Apenas o PageRank de Boromir.", "correct": False, "explanation": "PageRank indica centralidade, nao motivacao."},
+                {"label": "Uma lista de todos os vizinhos dele.", "correct": False, "explanation": "Vizinhos ajudam contexto, mas nao bastam para explicar intencao."},
             ],
-            "answer": "Cosine mede similaridade vetorial entre pergunta e unidade recuperavel.",
+            "answer": "A melhor evidencia e textual: falas ou narracao que mostrem como Boromir racionaliza a tentacao.",
         },
     },
     {
@@ -395,19 +395,19 @@ LECTURE_STEPS = [
         "title": "RAG textual para pergunta relacional",
         "duration": "5 min",
         "mode": "rag",
-        "question": "Como Frodo se conecta a Sauron?",
-        "center": "Frodo",
+        "question": "Quem funciona como ponte entre Rohan, Gondor e a guerra contra Mordor?",
+        "center": "Theoden",
         "topK": 8,
-        "demoAction": "Aplicar mostra a falha honesta: se os chunks top-k nao sustentam a relacao, o sistema deve dizer isso.",
+        "demoAction": "Aplicar mostra o limite do RAG puro quando a pergunta pede pontes entre comunidades politicas.",
         "talkingPoints": [
-            "Perguntas relacionais pedem conectores, tipos de aresta e caminhos multi-hop.",
-            "Um chunk isolado pode citar Frodo sem Sauron, ou Sauron sem explicar Frodo.",
+            "Perguntas sobre pontes pedem entidades intermediarias, nao apenas cenas parecidas.",
+            "Um chunk pode falar de Rohan sem recuperar Gondor, ou recuperar Mordor sem explicar a ponte.",
             "O erro didatico seria deixar o LLM preencher a lacuna com conhecimento externo.",
         ],
         "methodContrasts": [
-            {"label": "RAG", "text": "Recupera texto parecido, mas pode perder a ponte estrutural."},
-            {"label": "Graph", "text": "Recupera a ponte, mas nao necessariamente a narrativa."},
-            {"label": "GraphRAG", "text": "Recupera a ponte e usa essa estrutura para buscar texto melhor."},
+            {"label": "RAG", "text": "Pode recuperar cenas de batalha, mas espalhadas por faccoes."},
+            {"label": "Graph", "text": "Pode listar personagens que conectam comunidades."},
+            {"label": "GraphRAG", "text": "Usa conectores para buscar trechos que explicam por que a ponte importa."},
         ],
         "architecture": {
             "name": "Limite de RAG puro",
@@ -420,13 +420,13 @@ LECTURE_STEPS = [
             "Essa etapa justifica o grafo sem demonizar RAG.",
         ],
         "quiz": {
-            "question": "Qual problema aparece quando a resposta depende de uma ponte entre entidades?",
+            "question": "Por que essa pergunta e ruim para RAG textual puro?",
             "options": [
-                {"label": "Context drift ou evidencia espalhada.", "correct": True, "explanation": "Correto. A evidencia pode estar distribuida em varios trechos e entidades."},
-                {"label": "O embedding deixa de funcionar matematicamente.", "correct": False, "explanation": "Nao. Ele funciona, mas pode ranquear evidencia insuficiente."},
-                {"label": "Neo4j deixa de ser necessario.", "correct": False, "explanation": "Pelo contrario: a pergunta motiva o grafo."},
+                {"label": "Porque a resposta depende de intermediarios entre grupos.", "correct": True, "explanation": "Correto. Isso e uma propriedade estrutural, nao apenas semantica local."},
+                {"label": "Porque RAG nao consegue recuperar nomes proprios.", "correct": False, "explanation": "Consegue, mas pode nao montar a ponte entre eles."},
+                {"label": "Porque Mordor nao aparece no corpus.", "correct": False, "explanation": "A questao nao e ausencia de termo; e organizacao relacional."},
             ],
-            "answer": "O problema central e evidencia espalhada: o top-k textual pode nao reconstruir a ponte relacional.",
+            "answer": "A dificuldade e estrutural: identificar pontes entre comunidades exige caminhos/conectores.",
         },
     },
     {
@@ -434,20 +434,19 @@ LECTURE_STEPS = [
         "title": "Graph-only: caminhos e conectores",
         "duration": "6 min",
         "mode": "graph",
-        "question": "Qual o caminho estrutural entre Frodo e Sauron?",
-        "center": "Frodo",
+        "question": "Quais personagens conectam Rohan e Gondor no grafo?",
+        "center": "Theoden",
         "hops": 2,
-        "cypherExample": "frodo-sauron-path",
-        "demoAction": "Aplicar abre o exemplo Cypher de menor caminho e o subgrafo em Frodo.",
+        "demoAction": "Aplicar abre o subgrafo em Theoden para discutir pontes entre reinos e guerra.",
         "talkingPoints": [
             "A evidencia primaria e simbolica: nos, arestas, pesos e tipos de relacao.",
             "O grafo responde bem a conectividade, centralidade e vizinhanca.",
             "O limite e que estrutura pode ser seca ou ambigua sem texto narrativo.",
         ],
         "methodContrasts": [
-            {"label": "RAG", "text": "Nao garante caminho entre entidades."},
-            {"label": "Graph", "text": "Mostra caminho, relacao direta, conectores 2-hop e pesos."},
-            {"label": "GraphRAG", "text": "Usa essa estrutura como guia para recuperar texto."},
+            {"label": "RAG", "text": "Pode citar Rohan ou Gondor, mas nao mede ponte."},
+            {"label": "Graph", "text": "Mostra conectores, pesos, comunidades e saltos."},
+            {"label": "GraphRAG", "text": "Usa os conectores para recuperar explicacao narrativa."},
         ],
         "architecture": {
             "name": "Graph as Structural Context",
@@ -460,13 +459,13 @@ LECTURE_STEPS = [
             "Compare relacao direta com caminho: sao evidencias diferentes.",
         ],
         "quiz": {
-            "question": "Qual afirmacao sobre Graph-only e mais precisa?",
+            "question": "Quando o grafo responde melhor que texto nessa pergunta?",
             "options": [
-                {"label": "Ele substitui completamente o texto.", "correct": False, "explanation": "Errado. Pode faltar narrativa."},
-                {"label": "Ele torna a pergunta verificavel por query e subgrafo.", "correct": True, "explanation": "Correto. A resposta pode ser auditada por arestas e caminhos."},
-                {"label": "Ele sempre usa embeddings.", "correct": False, "explanation": "Nao neste modo. Aqui a recuperacao e estrutural."},
+                {"label": "Quando queremos medir ponte entre comunidades.", "correct": True, "explanation": "Correto. Conectividade e comunidade sao propriedades estruturais."},
+                {"label": "Quando queremos uma citacao literal de Theoden.", "correct": False, "explanation": "Isso e melhor para RAG textual."},
+                {"label": "Quando queremos que o LLM invente uma teoria politica.", "correct": False, "explanation": "A demo deve ficar ancorada em evidencias."},
             ],
-            "answer": "Graph-only e forte porque torna a evidencia verificavel por query, caminhos e arestas.",
+            "answer": "Graph-only e forte quando a pergunta pede ponte, comunidade, caminho, grau ou centralidade.",
         },
     },
     {
@@ -474,20 +473,20 @@ LECTURE_STEPS = [
         "title": "GraphRAG: KG-as-Index",
         "duration": "5 min",
         "mode": "hybrid",
-        "question": "Como Frodo se conecta a Sauron?",
-        "center": "Frodo",
+        "question": "Por que a marcha de Aragorn ao Portao Negro ajuda a missao longe dali?",
+        "center": "Aragorn",
         "hops": 2,
         "topK": 8,
-        "demoAction": "Aplicar abre GraphRAG. O subgrafo ativa Frodo/Sauron e reforca evidencias textuais relacionadas.",
+        "demoAction": "Aplicar abre GraphRAG. O subgrafo ativa Aragorn, Sauron, Gondor e aliados; o texto explica a distracao estrategica.",
         "talkingPoints": [
             "O KG funciona como andaime de recuperacao.",
-            "Um chunk entra por cosine e tambem pode ganhar reforco por estar conectado ao subgrafo.",
-            "A explicabilidade e topologica: o trecho apareceu porque esta ligado ao caminho.",
+            "Um chunk sobre estrategia pode ganhar reforco por estar conectado ao subgrafo de Aragorn e Sauron.",
+            "A explicabilidade e topologica: o trecho apareceu porque esta ligado a uma decisao militar no grafo.",
         ],
         "methodContrasts": [
-            {"label": "RAG", "text": "Top-k textual puro."},
-            {"label": "Graph", "text": "Subgrafo sem texto."},
-            {"label": "GraphRAG", "text": "Top-k textual condicionado por entidades e vizinhos."},
+            {"label": "RAG", "text": "Pode achar a fala sobre distracao se os termos baterem."},
+            {"label": "Graph", "text": "Mostra Aragorn, Sauron, Gondor e aliados como estrutura."},
+            {"label": "GraphRAG", "text": "Liga a estrutura militar ao trecho que explica a estrategia."},
         ],
         "architecture": {
             "name": "KG-as-Index",
@@ -500,13 +499,13 @@ LECTURE_STEPS = [
             "O grafo acha a estrutura; o texto explica a narrativa.",
         ],
         "quiz": {
-            "question": "No KG-as-Index, qual e o papel principal do grafo?",
+            "question": "Por que esse exemplo e melhor que uma pergunta direta A-B?",
             "options": [
-                {"label": "Organizar e expandir a recuperacao de chunks.", "correct": True, "explanation": "Correto. O grafo funciona como indice estrutural."},
-                {"label": "Gerar embeddings no lugar do modelo.", "correct": False, "explanation": "Errado. Embeddings continuam vindo do modelo de embedding."},
-                {"label": "Responder sem consultar texto.", "correct": False, "explanation": "Isso e Graph as Structural Context."},
+                {"label": "Porque exige uma relacao indireta entre acao, alvo e efeito narrativo.", "correct": True, "explanation": "Correto. A resposta cruza estrategia, entidades e texto."},
+                {"label": "Porque nao tem personagens nomeados.", "correct": False, "explanation": "Tem personagens; o ponto e a relacao indireta."},
+                {"label": "Porque o grafo sozinho narra a cena.", "correct": False, "explanation": "O grafo mostra estrutura, mas o texto explica a estrategia."},
             ],
-            "answer": "O grafo organiza a recuperacao textual e justifica por que certos chunks entram no contexto.",
+            "answer": "E um bom GraphRAG porque a relacao e indireta: uma acao militar cria condicoes para uma missao distante.",
         },
     },
     {
@@ -514,20 +513,20 @@ LECTURE_STEPS = [
         "title": "Cinco arquiteturas GraphRAG",
         "duration": "7 min",
         "mode": "compare",
-        "question": "Qual arquitetura voce usaria para auditar a relacao entre Frodo, Gollum e o Anel?",
-        "center": "Gollum",
+        "question": "Como auditar se Saruman e antagonista por fala, alianca ou posicao estrutural?",
+        "center": "Saruman",
         "hops": 2,
         "topK": 6,
-        "demoAction": "Aplicar abre Compare. Antes de rodar, discuta qual arquitetura seria mais adequada.",
+        "demoAction": "Aplicar abre Compare. Antes de rodar, discuta se a melhor evidencia vem de texto, query, subgrafo ou construcao do KG.",
         "talkingPoints": [
             "KG-as-Index recupera texto via topologia.",
             "Structural Context injeta triplas/caminhos linearizados.",
             "Text-to-Query gera Cypher/SPARQL; KG Builder cria o grafo; Hybrid funde rankings.",
         ],
         "methodContrasts": [
-            {"label": "KG-as-Index", "text": "Bom quando o texto correto existe, mas esta distante."},
-            {"label": "Text-to-Query", "text": "Bom quando a pergunta pode virar consulta simbolica precisa."},
-            {"label": "Hybrid", "text": "Bom quando texto e estrutura sao ambos necessarios."},
+            {"label": "Structural Context", "text": "Bom para auditar aliancas e relacoes como triplas."},
+            {"label": "Text-to-Query", "text": "Bom para perguntar diretamente por relacoes de Saruman."},
+            {"label": "KG Builder", "text": "Bom para discutir como as relacoes de antagonismo seriam extraidas."},
         ],
         "architecture": {
             "name": "Espectro neuro-simbolico",
@@ -554,11 +553,10 @@ LECTURE_STEPS = [
         "title": "Ponte com GNN: k-hop como campo receptivo",
         "duration": "5 min",
         "mode": "graph",
-        "question": "O que muda quando aumento hops de 1 para 3?",
-        "center": "Frodo",
+        "question": "O que muda na vizinhanca de Gandalf quando saio de 1-hop para 3-hop?",
+        "center": "Gandalf",
         "hops": 1,
-        "cypherExample": "frodo-neighbors",
-        "demoAction": "Aplicar abre a vizinhanca de Frodo. Altere hops e observe cobertura versus ruido.",
+        "demoAction": "Aplicar abre a vizinhanca de Gandalf. Altere hops e observe cobertura versus ruido.",
         "talkingPoints": [
             "Em GNN, cada camada agrega mensagens de vizinhos.",
             "Em GraphRAG, cada hop expande o contexto estrutural que pode ativar texto.",
@@ -594,20 +592,20 @@ LECTURE_STEPS = [
         "title": "Desafio: escolher a recuperacao certa",
         "duration": "5 min",
         "mode": "compare",
-        "question": "Quem conecta Frodo a Mordor e por que isso importa para a missao?",
-        "center": "Frodo",
+        "question": "A influencia de Gandalf vem de centralidade estrutural, autoridade narrativa ou das duas?",
+        "center": "Gandalf",
         "hops": 2,
         "topK": 8,
         "demoAction": "Aplicar abre Compare. Antes de rodar, peca para a turma escolher qual coluna deve vencer.",
         "talkingPoints": [
-            "Perguntas narrativas favorecem RAG textual.",
-            "Perguntas topologicas favorecem Graph-only.",
-            "Perguntas relacionais com explicacao favorecem GraphRAG hibrido.",
+            "Autoridade narrativa favorece RAG textual.",
+            "Influencia estrutural favorece Graph-only.",
+            "Perguntas que pedem as duas dimensoes favorecem GraphRAG hibrido.",
         ],
         "methodContrasts": [
-            {"label": "Narrativa", "text": "Por que o Anel importa para Frodo? -> RAG tende a ser suficiente."},
-            {"label": "Estrutura", "text": "Qual o menor caminho Frodo-Sauron? -> Graph e o metodo natural."},
-            {"label": "Relacao + explicacao", "text": "Como Frodo se conecta a Sauron? -> GraphRAG tende a ser mais completo."},
+            {"label": "Narrativa", "text": "Como Gandalf convence e orienta outros personagens? -> RAG tende a ajudar."},
+            {"label": "Estrutura", "text": "Quem Gandalf conecta no grafo? -> Graph e o metodo natural."},
+            {"label": "Relacao + explicacao", "text": "Por que ele e influente? -> GraphRAG tende a ser mais completo."},
         ],
         "architecture": {
             "name": "Hybrid Vector + Graph",
@@ -622,11 +620,11 @@ LECTURE_STEPS = [
         "quiz": {
             "question": "Qual pergunta e melhor para demonstrar GraphRAG hibrido?",
             "options": [
-                {"label": "Uma pergunta factual localizada em um paragrafo.", "correct": False, "explanation": "RAG puro provavelmente resolve bem."},
-                {"label": "Uma pergunta so de ranking estrutural.", "correct": False, "explanation": "Graph-only provavelmente basta."},
-                {"label": "Uma pergunta relacional que tambem pede explicacao narrativa.", "correct": True, "explanation": "Correto. Ela precisa de grafo e texto ao mesmo tempo."},
+                {"label": "Quem tem maior PageRank?", "correct": False, "explanation": "Graph-only provavelmente basta."},
+                {"label": "O que Gandalf disse em uma cena especifica?", "correct": False, "explanation": "RAG textual provavelmente resolve melhor."},
+                {"label": "Por que Gandalf e influente na rede e na narrativa?", "correct": True, "explanation": "Correto. Ela precisa de estrutura e texto ao mesmo tempo."},
             ],
-            "answer": "GraphRAG brilha quando a pergunta precisa de relacao estrutural e explicacao textual.",
+            "answer": "GraphRAG brilha quando a pergunta pede influencia estrutural e interpretacao textual ao mesmo tempo.",
         },
     },
 ]
@@ -779,6 +777,8 @@ LIMIT 30
             "content": (
                 "Voce gera Cypher read-only para uma demo Neo4j de Senhor dos Aneis. "
                 "Responda apenas JSON valido com chaves query, explanation e warnings. "
+                "Nao use markdown, comentarios fora do JSON, nem texto explicativo adicional. "
+                "A explanation deve ter no maximo uma frase curta, descrevendo o que a query recupera. "
                 "A query deve ser uma unica consulta, sem ponto e virgula, sem CREATE/MERGE/DELETE/SET/REMOVE/DROP, "
                 "sem APOC e sem GDS. Sempre inclua LIMIT. Para perguntas visuais, prefira RETURN p ou RETURN a, r, b. "
                 "Use apenas labels, propriedades e relacoes do schema fornecido."
@@ -862,12 +862,22 @@ def cypher_synthesis_messages(payload: CypherSynthesizeRequest) -> list[dict[str
         {
             "role": "system",
             "content": (
-                "Voce sintetiza somente evidencia estrutural de um grafo Neo4j de Senhor dos Aneis. "
+                "Voce escreve a resposta final de um sistema Graph-only de producao sobre Senhor dos Aneis. "
+                "Responda em portugues brasileiro, com tom direto, natural e conclusivo. "
                 "Nao use conhecimento externo, chunks, livros, falas ou texto narrativo como evidencia. "
                 "Use apenas nos, labels, propriedades, arestas, pesos, comunidades, paths e linhas tabulares fornecidas. "
-                "Diferencie relacao direta, caminho, coocorrencia, comunidade e link predito. "
-                "Se a query nao trouxe estrutura suficiente, diga isso diretamente. "
-                "Responda em portugues brasileiro, curto e didatico."
+                "Nao exponha raciocinio interno, passos ocultos ou texto de thinking. "
+                "Nao use a expressao 'contexto recuperado' no texto final. Prefira 'a estrutura do grafo' "
+                "ou 'a query retornada'. "
+                "Comece pela resposta em 1 ou 2 frases, sem introducoes como 'com base no grafo', "
+                "'com base na estrutura', 'a partir do grafo' ou equivalentes. "
+                "Depois, se ajudar, inclua no maximo 3 bullets curtos em 'Evidencias'. "
+                "Diferencie relacao direta, caminho, coocorrencia, comunidade e link predito quando isso mudar a interpretacao. "
+                "Nao trate coocorrencia, caminho ou comunidade como causalidade. "
+                "Use uma secao 'Limite' somente se a query nao trouxe estrutura suficiente para responder. "
+                "Se counts.nodes, counts.edges e counts.rows forem zero, diga apenas que esta query nao retornou "
+                "estrutura suficiente; nao conclua que os personagens, entidades ou relacoes nao existem no grafo inteiro. "
+                "Nao escreva frases meta sobre a aula, a apresentacao, a turma, a demo ou o sistema."
             ),
         },
         {
@@ -875,11 +885,37 @@ def cypher_synthesis_messages(payload: CypherSynthesizeRequest) -> list[dict[str
             "content": (
                 "/no_think\n"
                 f"Pergunta: {payload.question}\n\n"
-                "Contexto estrutural recuperado:\n"
+                "Evidencia estrutural disponivel:\n"
                 f"{json.dumps(structural_context, ensure_ascii=False)}"
             ),
         },
     ]
+
+
+def polish_graph_only_answer(answer: str) -> str:
+    def preserve_case(match: re.Match[str], replacement: str) -> str:
+        return replacement[:1].upper() + replacement[1:] if match.group(0)[:1].isupper() else replacement
+
+    polished = answer
+    polished = re.sub(
+        r"\bno contexto recuperado\b",
+        lambda match: preserve_case(match, "na estrutura do grafo"),
+        polished,
+        flags=re.IGNORECASE,
+    )
+    polished = re.sub(
+        r"\bdo contexto recuperado\b",
+        lambda match: preserve_case(match, "da estrutura do grafo"),
+        polished,
+        flags=re.IGNORECASE,
+    )
+    polished = re.sub(
+        r"\b(?:o\s+)?contexto recuperado\b",
+        lambda match: preserve_case(match, "a estrutura do grafo"),
+        polished,
+        flags=re.IGNORECASE,
+    )
+    return polished.strip()
 
 
 def graph_only_fallback(payload: CypherSynthesizeRequest, error: str | None = None) -> str:
@@ -946,6 +982,8 @@ def cypher_synthesize(payload: CypherSynthesizeRequest) -> dict[str, Any]:
         if not answer.strip():
             answer = graph_only_fallback(payload)
             status = "fallback: resposta vazia do Ollama"
+        else:
+            answer = polish_graph_only_answer(answer)
     except Exception as exc:
         answer = graph_only_fallback(payload, error=str(exc))
         status = f"fallback: {exc}"
