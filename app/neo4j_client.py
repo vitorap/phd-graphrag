@@ -70,8 +70,10 @@ class Neo4jClient:
                 MATCH (ch:Chapter)
                 WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines, count(ch) AS chapters
                 MATCH (b:Book)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines, chapters, count(b) AS books
+                MATCH (m:Movie)
                 RETURN entities, relationships, characters, retrievalDocuments, textChunks,
-                       dialogueLines, chapters, count(b) AS books
+                       dialogueLines, chapters, books, count(m) AS movies
                 """
             ).single()
             rels = session.run(
@@ -99,6 +101,7 @@ class Neo4jClient:
                 "dialogueLines": counts["dialogueLines"] if counts else 0,
                 "chapters": counts["chapters"] if counts else 0,
                 "books": counts["books"] if counts else 0,
+                "movies": counts["movies"] if counts else 0,
                 "relationshipTypes": [dict(row) for row in rels],
                 "topCharacters": [dict(row) for row in top],
             }

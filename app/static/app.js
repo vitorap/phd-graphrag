@@ -60,7 +60,9 @@ function renderStats(stats) {
     <span>Entidades: ${stats.entities}</span>
     <span>Relacoes: ${stats.relationships}</span>
     <span>Personagens: ${stats.characters}</span>
-    <span>Docs RAG: ${stats.retrievalDocuments || 0}</span>
+    <span>Fontes: ${stats.books || 0} livros + ${stats.movies || 0} filmes</span>
+    <span>Capitulos: ${stats.chapters || 0}</span>
+    <span>Unidades RAG: ${stats.retrievalDocuments || 0}</span>
     <span>Chunks livro: ${stats.textChunks || 0}</span>
     <span>Falas script: ${stats.dialogueLines || 0}</span>
   `;

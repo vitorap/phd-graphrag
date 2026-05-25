@@ -77,6 +77,7 @@ Tarefas:
 - Importar `PREDICTED_LINK` como camada de link prediction.
 - Importar raca/genero.
 - Importar `Book`, `Chapter`, `Movie`, `TextChunk` e `DialogueLine`.
+- Tratar `RetrievalDocument` como superclasse tecnica de unidades recuperaveis, nao como documento fonte.
 - Ligar textos e falas a entidades por `MENTIONS`.
 - Ligar falas a personagens por `SPEAKS_LINE`.
 - Parsear OWL com `rdflib`.

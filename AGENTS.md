@@ -59,6 +59,12 @@ Labels principais:
 - `TextChunk`
 - `DialogueLine`
 
+Terminologia de RAG:
+
+- `Book`, `Movie` e `Chapter` sao fontes/estrutura narrativa.
+- `TextChunk` e `DialogueLine` sao as unidades recuperaveis pelo RAG.
+- `RetrievalDocument` e uma superclasse tecnica para `TextChunk` + `DialogueLine`; nao significa arquivo fonte.
+
 Relacoes principais:
 
 - `INTERACTS_WITH`

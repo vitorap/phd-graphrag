@@ -15,6 +15,8 @@ A demo usa quatro fontes complementares:
 - **SNA_LOTR**: livros limpos, scripts dos filmes, personagens, redes ponderadas, links por capitulo, sentimento e arquivos de link prediction.
 - **Corpus textual local**: chunks dos livros e falas dos filmes ligados a entidades por `MENTIONS`.
 
+No dashboard, **Fontes** sao os arquivos/obras de origem: 3 livros e 3 filmes. **Unidades RAG** sao as passagens indexadas e recuperaveis pelo BM25: `TextChunk` dos livros + `DialogueLine` dos scripts. Portanto, neste projeto `RetrievalDocument` e uma superclasse tecnica para "coisa recuperavel pelo RAG", nao um documento fonte/arquivo.
+
 O resultado e um grafo hibrido e textual:
 
 - `INTERACTS_WITH`: backbone narrativo vindo do dataset da Raphtory.

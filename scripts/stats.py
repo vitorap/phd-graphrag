@@ -28,9 +28,16 @@ def main() -> int:
                 WITH entities, relationships, characters, retrievalDocuments, count(t) AS textChunks
                 MATCH (l:DialogueLine)
                 WITH entities, relationships, characters, retrievalDocuments, textChunks, count(l) AS dialogueLines
+                MATCH (ch:Chapter)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines, count(ch) AS chapters
+                MATCH (b:Book)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines, chapters, count(b) AS books
+                MATCH (m:Movie)
+                WITH entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines,
+                     chapters, books, count(m) AS movies
                 MATCH (c:Character)
                 RETURN entities, relationships, characters, retrievalDocuments, textChunks, dialogueLines,
-                       collect(c.name)[0..10] AS sample
+                       chapters, books, movies, collect(c.name)[0..10] AS sample
                 """
             ).single()
             rel_rows = session.run(
@@ -55,9 +62,10 @@ def main() -> int:
             print(f"Entidades: {rows['entities']}")
             print(f"Relacoes: {rows['relationships']}")
             print(f"Personagens: {rows['characters']}")
-            print(f"Documentos RAG: {rows['retrievalDocuments']}")
-            print(f"Text chunks: {rows['textChunks']}")
-            print(f"Falas de script: {rows['dialogueLines']}")
+            print(f"Fontes: {rows['books']} livros, {rows['movies']} filmes, {rows['chapters']} capitulos")
+            print(f"Unidades RAG: {rows['retrievalDocuments']}")
+            print(f"- chunks de livros: {rows['textChunks']}")
+            print(f"- falas de script: {rows['dialogueLines']}")
             print(f"Amostra: {', '.join(rows['sample'])}")
             print("\nRelacoes por tipo:")
             for row in rel_rows:
