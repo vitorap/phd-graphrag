@@ -232,7 +232,13 @@ async function askQuestion() {
   answerBox.textContent = "";
   contextBox.textContent = "";
   compareResults.innerHTML = "";
-  llmStatus.textContent = "Consultando grafo e Ollama...";
+  if (llmInput.checked) {
+    llmStatus.textContent = "Ollama local gerando resposta...";
+    answerBox.textContent = "Recuperando contexto e gerando com Ollama local. Esta consulta costuma levar 15-60s.";
+  } else {
+    llmStatus.textContent = "Recuperando contexto...";
+    answerBox.textContent = "Recuperando contexto...";
+  }
   askButton.disabled = true;
   try {
     const payload = {
@@ -265,7 +271,13 @@ async function compareQuestion() {
   answerBox.textContent = "";
   contextBox.textContent = "";
   compareResults.innerHTML = "";
-  llmStatus.textContent = "Comparando RAG, Graph e GraphRAG...";
+  if (llmInput.checked) {
+    llmStatus.textContent = "Comparando com Ollama local...";
+    answerBox.textContent = "Gerando tres respostas com Ollama local. Esta comparacao costuma levar perto de 1min.";
+  } else {
+    llmStatus.textContent = "Comparando RAG, Graph e GraphRAG...";
+    answerBox.textContent = "Comparando recuperacoes...";
+  }
   compareButton.disabled = true;
   try {
     const payload = {
