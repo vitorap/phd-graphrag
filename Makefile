@@ -10,7 +10,7 @@ EMBED_MODEL ?= nomic-embed-text:latest
 NUM_CTX ?= 16384
 TIMEOUT ?= 60
 
-.PHONY: help up down reset build data seed vectors stats ask compare app neo4j logs ps shell smoke smoke-vectors smoke-strategies bootstrap ollama-list ollama-show ollama-warm ollama-pull-embed
+.PHONY: help up down reset build data seed vectors stats ask compare app neo4j logs ps shell smoke smoke-vectors smoke-strategies llm-check bootstrap ollama-list ollama-show ollama-warm ollama-pull-embed
 
 help:
 	@printf "\nGraphRAG em Middle-earth\n"
@@ -30,6 +30,7 @@ help:
 	@printf "make logs     Acompanha logs do app e Neo4j\n"
 	@printf "make smoke    Roda um teste rapido de ponta a ponta\n"
 	@printf "make smoke-strategies  Valida invariantes das seis variantes GraphRAG. Requer make vectors\n"
+	@printf "make llm-check  Valida contratos LangChain/Ollama dos prompts\n"
 	@printf "make reset    Remove containers e volumes\n\n"
 
 build:
@@ -101,5 +102,8 @@ smoke-vectors:
 
 smoke-strategies:
 	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/validate_graphrag_strategies.py "$(Q)" --hops "$(HOPS)" --top-k "$(TOP_K)"
+
+llm-check:
+	docker compose run --rm -e OLLAMA_MODEL="$(MODEL)" -e OLLAMA_NUM_CTX="$(NUM_CTX)" -e OLLAMA_TIMEOUT="$(TIMEOUT)" app python scripts/validate_llm_contracts.py
 
 bootstrap: ollama-pull-embed up data seed vectors stats

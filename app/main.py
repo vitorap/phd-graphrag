@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.graphrag import GRAPH_RAG_STRATEGIES, GRAPH_RAG_STRATEGY_ORDER, GraphRAG
+from app.llm_service import LLMService
 from app.neo4j_client import Neo4jClient
 from app.ollama_client import OllamaClient
 from app.vector_store import VectorStore
@@ -739,185 +738,6 @@ def vector_search(payload: VectorSearchRequest) -> dict[str, Any]:
         client.close()
 
 
-def cypher_generation_messages(question: str) -> list[dict[str, str]]:
-    schema = """
-Labels principais:
-- Entity(name, kind, pagerank, community, weightedDegree)
-- Character(name, race, gender, pagerank, community, weightedDegree)
-- Race(name), Place(name), Weapon(name), Chapter(title, bookTitle)
-- RetrievalDocument(id, sourceType, sourceTitle, chapterTitle, speaker, text)
-- TextChunk, DialogueLine
-
-Relacoes principais:
-- CO_OCCURS_WITH(weight), INTERACTS_WITH(weight), ENEMY_OF, FRIEND_OF
-- HAS_RACE, HAS_WEAPON, IN_CHAPTER, MENTIONS, SPEAKS_LINE
-- SIMILAR_CHAPTER(weight), PREDICTED_LINK(confidence, method)
-""".strip()
-    examples = """
-Pergunta: caminho entre Frodo e Sauron
-Cypher:
-MATCH (a:Entity {name: 'Frodo'})
-MATCH (b:Entity {name: 'Sauron'})
-MATCH p = shortestPath((a)-[*..5]-(b))
-WHERE all(rel IN relationships(p) WHERE type(rel) <> 'PREDICTED_LINK')
-RETURN p, [n IN nodes(p) | n.name] AS caminho, length(p) AS saltos
-LIMIT 20
-
-Pergunta: relacoes entre elfos e orcs
-Cypher:
-MATCH p = (elf:Character)-[r]-(orc:Character)
-WHERE elf.race = 'Elf' AND orc.race = 'Orc'
-RETURN p, elf.name AS elfo, orc.name AS orc, type(r) AS relacao, coalesce(r.weight, r.confidence, 1) AS peso
-ORDER BY peso DESC
-LIMIT 30
-""".strip()
-    return [
-        {
-            "role": "system",
-            "content": (
-                "Voce gera Cypher read-only para uma demo Neo4j de Senhor dos Aneis. "
-                "Responda apenas JSON valido com chaves query, explanation e warnings. "
-                "Nao use markdown, comentarios fora do JSON, nem texto explicativo adicional. "
-                "A explanation deve ter no maximo uma frase curta, descrevendo o que a query recupera. "
-                "A query deve ser uma unica consulta, sem ponto e virgula, sem CREATE/MERGE/DELETE/SET/REMOVE/DROP, "
-                "sem APOC e sem GDS. Sempre inclua LIMIT. Para perguntas visuais, prefira RETURN p ou RETURN a, r, b. "
-                "Use apenas labels, propriedades e relacoes do schema fornecido."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"/no_think\nSchema:\n{schema}\n\nExemplos:\n{examples}\n\nPergunta do usuario: {question}",
-        },
-    ]
-
-
-def parse_cypher_generation(raw: str) -> dict[str, Any]:
-    text = raw.strip()
-    warnings: list[str] = []
-    data: dict[str, Any] | None = None
-    json_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if json_match:
-        try:
-            candidate = json.loads(json_match.group(0))
-            if isinstance(candidate, dict):
-                data = candidate
-        except json.JSONDecodeError:
-            warnings.append("O modelo nao retornou JSON valido; extraindo Cypher do texto.")
-
-    if data is None:
-        code_match = re.search(r"```(?:cypher)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-        query = code_match.group(1).strip() if code_match else extract_cypher_from_text(text)
-        data = {
-            "query": query,
-            "explanation": "Cypher extraido da resposta do modelo.",
-            "warnings": warnings,
-        }
-
-    query = str(data.get("query") or "").strip().removesuffix(";").strip()
-    explanation = str(data.get("explanation") or "Query gerada a partir da pergunta.").strip()
-    model_warnings = data.get("warnings") or []
-    if isinstance(model_warnings, str):
-        model_warnings = [model_warnings]
-    warnings.extend(str(item) for item in model_warnings if item)
-    return {"query": query, "explanation": explanation, "warnings": warnings}
-
-
-def extract_cypher_from_text(text: str) -> str:
-    match = re.search(r"\b(MATCH|OPTIONAL\s+MATCH|WITH|RETURN|UNWIND|CALL\s+db\.)\b.*", text, re.IGNORECASE | re.DOTALL)
-    return match.group(0).strip() if match else text.strip()
-
-
-def cypher_synthesis_messages(payload: CypherSynthesizeRequest) -> list[dict[str, str]]:
-    graph = payload.graph or {}
-    nodes = (graph.get("nodes") or [])[:80]
-    edges = (graph.get("edges") or [])[:120]
-    rows = payload.rows[:20]
-    structural_context = {
-        "query": payload.query,
-        "nodes": [
-            {
-                "name": node.get("name"),
-                "labels": node.get("labels"),
-                "race": node.get("race"),
-                "pagerank": node.get("pagerank"),
-                "community": node.get("community"),
-            }
-            for node in nodes
-        ],
-        "edges": [
-            {
-                "source": edge.get("sourceName"),
-                "type": edge.get("type"),
-                "target": edge.get("targetName"),
-                "weight": edge.get("weight"),
-                "confidence": edge.get("confidence"),
-                "method": edge.get("method"),
-            }
-            for edge in edges
-        ],
-        "rows": rows,
-        "counts": {"nodes": len(graph.get("nodes") or []), "edges": len(graph.get("edges") or []), "rows": len(payload.rows)},
-    }
-    return [
-        {
-            "role": "system",
-            "content": (
-                "Voce escreve a resposta final de um sistema Graph-only de producao sobre Senhor dos Aneis. "
-                "Responda em portugues brasileiro, com tom direto, natural e conclusivo. "
-                "Nao use conhecimento externo, chunks, livros, falas ou texto narrativo como evidencia. "
-                "Use apenas nos, labels, propriedades, arestas, pesos, comunidades, paths e linhas tabulares fornecidas. "
-                "Nao exponha raciocinio interno, passos ocultos ou texto de thinking. "
-                "Nao use a expressao 'contexto recuperado' no texto final. Prefira 'a estrutura do grafo' "
-                "ou 'a query retornada'. "
-                "Comece pela resposta em 1 ou 2 frases, sem introducoes como 'com base no grafo', "
-                "'com base na estrutura', 'a partir do grafo' ou equivalentes. "
-                "Depois, se ajudar, inclua no maximo 3 bullets curtos em 'Evidencias'. "
-                "Diferencie relacao direta, caminho, coocorrencia, comunidade e link predito quando isso mudar a interpretacao. "
-                "Nao trate coocorrencia, caminho ou comunidade como causalidade. "
-                "Use uma secao 'Limite' somente se a query nao trouxe estrutura suficiente para responder. "
-                "Se counts.nodes, counts.edges e counts.rows forem zero, diga apenas que esta query nao retornou "
-                "estrutura suficiente; nao conclua que os personagens, entidades ou relacoes nao existem no grafo inteiro. "
-                "Nao escreva frases meta sobre a aula, a apresentacao, a turma, a demo ou o sistema."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                "/no_think\n"
-                f"Pergunta: {payload.question}\n\n"
-                "Evidencia estrutural disponivel:\n"
-                f"{json.dumps(structural_context, ensure_ascii=False)}"
-            ),
-        },
-    ]
-
-
-def polish_graph_only_answer(answer: str) -> str:
-    def preserve_case(match: re.Match[str], replacement: str) -> str:
-        return replacement[:1].upper() + replacement[1:] if match.group(0)[:1].isupper() else replacement
-
-    polished = answer
-    polished = re.sub(
-        r"\bno contexto recuperado\b",
-        lambda match: preserve_case(match, "na estrutura do grafo"),
-        polished,
-        flags=re.IGNORECASE,
-    )
-    polished = re.sub(
-        r"\bdo contexto recuperado\b",
-        lambda match: preserve_case(match, "da estrutura do grafo"),
-        polished,
-        flags=re.IGNORECASE,
-    )
-    polished = re.sub(
-        r"\b(?:o\s+)?contexto recuperado\b",
-        lambda match: preserve_case(match, "a estrutura do grafo"),
-        polished,
-        flags=re.IGNORECASE,
-    )
-    return polished.strip()
-
-
 def graph_only_fallback(payload: CypherSynthesizeRequest, error: str | None = None) -> str:
     graph = payload.graph or {}
     nodes = graph.get("nodes") or []
@@ -955,39 +775,70 @@ def cypher_run(payload: CypherRequest) -> dict[str, Any]:
 
 @app.post("/api/cypher/generate")
 def cypher_generate(payload: CypherGenerateRequest) -> dict[str, Any]:
-    ollama = OllamaClient(model=payload.model)
-    raw = ollama.chat(cypher_generation_messages(payload.question), model=payload.model)
-    parsed = parse_cypher_generation(raw)
+    llm = LLMService(model=payload.model)
+    try:
+        result = llm.generate_cypher(payload.question, model=payload.model)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Ollama/LangChain nao gerou Cypher valido: {exc}") from exc
     client = Neo4jClient()
     try:
-        query = client.prepare_readonly_cypher(parsed["query"], limit=80)
+        query = client.prepare_readonly_cypher(result.draft.query, limit=80)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Ollama gerou Cypher invalido: {exc}") from exc
     finally:
         client.close()
     return {
         "query": query,
-        "explanation": parsed["explanation"],
-        "warnings": parsed["warnings"],
-        "model": payload.model or ollama.model,
+        "explanation": result.draft.explanation,
+        "warnings": result.draft.warnings,
+        "model": payload.model or llm.model,
+        "llmTrace": result.trace.model_dump(),
     }
 
 
 @app.post("/api/cypher/synthesize")
 def cypher_synthesize(payload: CypherSynthesizeRequest) -> dict[str, Any]:
-    ollama = OllamaClient(model=payload.model)
+    llm = LLMService(model=payload.model)
+    structured_answer = None
+    llm_trace = None
     try:
-        answer = ollama.chat(cypher_synthesis_messages(payload), model=payload.model)
-        status = "retrieval+ollama"
+        result = llm.synthesize_cypher(
+            question=payload.question,
+            query=payload.query,
+            rows=payload.rows,
+            graph=payload.graph,
+            model=payload.model,
+        )
+        answer = result.answer
+        structured_answer = result.structured_answer.model_dump() if result.structured_answer else None
+        llm_trace = result.trace.model_dump()
+        status = result.status
         if not answer.strip():
             answer = graph_only_fallback(payload)
             status = "fallback: resposta vazia do Ollama"
-        else:
-            answer = polish_graph_only_answer(answer)
     except Exception as exc:
         answer = graph_only_fallback(payload, error=str(exc))
         status = f"fallback: {exc}"
-    return {"answer": answer, "llmStatus": status, "model": payload.model or ollama.model}
+        llm_trace = {
+            "provider": "ollama",
+            "adapter": "langchain-ollama",
+            "model": payload.model or llm.model,
+            "template": "cypher_synthesize",
+            "schemaName": "GroundedAnswer",
+            "promptChars": 0,
+            "estimatedTokens": 0,
+            "attempts": 0,
+            "status": "fallback",
+            "error": str(exc),
+            "preview": "",
+        }
+    return {
+        "answer": answer,
+        "structuredAnswer": structured_answer,
+        "llmTrace": llm_trace,
+        "llmStatus": status,
+        "model": payload.model or llm.model,
+    }
 
 
 @app.get("/api/lecture")

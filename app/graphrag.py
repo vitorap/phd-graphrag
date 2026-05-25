@@ -7,6 +7,7 @@ from math import log
 from typing import Any
 
 from app.config import settings
+from app.llm_service import LLMService
 from app.neo4j_client import Neo4jClient
 from app.ollama_client import OllamaClient
 from app.text_utils import normalize, snippet, tokenize
@@ -204,6 +205,7 @@ class GraphRAG:
         self.neo4j = neo4j
         self.ollama = ollama
         self.vector_store = vector_store or VectorStore()
+        self.llm_service = LLMService(base_url=ollama.base_url, model=ollama.model)
 
     def answer(
         self,
@@ -287,12 +289,27 @@ class GraphRAG:
                 "documentsBySource": documents_by_source,
                 "retrieval": self.retrieval_summary(documents),
                 "trace": trace,
+                "structuredAnswer": None,
+                "llmTrace": None,
                 "model": model or self.ollama.model,
                 "llmStatus": "retrieval-only",
             }
 
+        structured_answer: dict[str, Any] | None = None
+        llm_trace: dict[str, Any] | None = None
         try:
-            answer = self.ollama.chat(self.messages(question, context, mode), model=model)
+            llm_result = self.llm_service.synthesize_answer(
+                question=question,
+                mode=mode,
+                context_sections=context_sections,
+                strategy=GRAPH_RAG_STRATEGIES.get(graph_rag_strategy) if mode == "hybrid" else None,
+                strategy_runtime=strategy_runtime,
+                model=model,
+            )
+            answer = llm_result.answer
+            structured_answer = llm_result.structured_answer.model_dump() if llm_result.structured_answer else None
+            llm_trace = llm_result.trace.model_dump()
+            trace = self.apply_llm_trace(trace, llm_trace)
             if not answer.strip():
                 answer = self.extractive_answer(
                     question,
@@ -304,11 +321,24 @@ class GraphRAG:
                 )
                 status = "fallback: resposta vazia do Ollama"
             else:
-                answer = self.polish_llm_answer(answer, mode)
-                status = "retrieval+ollama"
+                status = llm_result.status
         except Exception as exc:
             answer = self.extractive_answer(question, entities, graph, documents, mode, llm_error=str(exc))
             status = f"fallback: {exc}"
+            llm_trace = {
+                "provider": "ollama",
+                "adapter": "langchain-ollama",
+                "model": model or self.ollama.model,
+                "template": f"answer:{mode}",
+                "schemaName": "GroundedAnswer",
+                "promptChars": len(context),
+                "estimatedTokens": max(1, len(context) // 4) if context else 0,
+                "attempts": 0,
+                "status": "fallback",
+                "error": str(exc),
+                "preview": context[:1800],
+            }
+            trace = self.apply_llm_trace(trace, llm_trace)
 
         return {
             "question": question,
@@ -328,6 +358,8 @@ class GraphRAG:
             "documentsBySource": documents_by_source,
             "retrieval": self.retrieval_summary(documents),
             "trace": trace,
+            "structuredAnswer": structured_answer,
+            "llmTrace": llm_trace,
             "model": model or self.ollama.model,
             "llmStatus": status,
         }
@@ -921,6 +953,25 @@ class GraphRAG:
         }
 
     @staticmethod
+    def apply_llm_trace(trace: dict[str, Any], llm_trace: dict[str, Any] | None) -> dict[str, Any]:
+        if not llm_trace:
+            return trace
+        prompt = trace.setdefault("prompt", {})
+        prompt.update(
+            {
+                "template": llm_trace.get("template"),
+                "schema": llm_trace.get("schemaName") or llm_trace.get("schema"),
+                "selectedChars": llm_trace.get("promptChars", prompt.get("selectedChars", 0)),
+                "estimatedTokens": llm_trace.get("estimatedTokens", prompt.get("estimatedTokens", 0)),
+                "preview": llm_trace.get("preview") or prompt.get("preview", ""),
+                "attempts": llm_trace.get("attempts"),
+                "adapter": llm_trace.get("adapter"),
+                "status": llm_trace.get("status"),
+            }
+        )
+        return trace
+
+    @staticmethod
     def trace_document(doc: dict[str, Any], seed_entities: list[str], graph_nodes: list[dict[str, Any]]) -> dict[str, Any]:
         mentions = set(doc.get("mentions") or [])
         graph_names = {node.get("name") for node in graph_nodes if node.get("name")}
@@ -1315,118 +1366,6 @@ class GraphRAG:
                 text_context,
             ]
         )
-
-    @staticmethod
-    def messages(question: str, context: str, mode: str = "hybrid") -> list[dict[str, str]]:
-        mode_instruction = {
-            "rag": (
-                "Modo atual: RAG textual puro. Voce recebeu apenas chunks/falas recuperados por similaridade textual. "
-                "Nao mencione grafo, arestas, subgrafo, caminhos, centralidade, coocorrencia ou evidencia estrutural. "
-                "Se a resposta nao estiver nos textos recuperados, diga isso em 'Limite' sem extrapolar pelo grafo."
-            ),
-            "graph": (
-                "Modo atual: Graph-only. Voce recebeu apenas estrutura do grafo. "
-                "Nao mencione chunks, falas, livros ou evidencia textual como suporte. "
-                "Explique relacoes como estrutura: aresta direta, caminho, vizinhanca, coocorrencia, comunidade ou link predito."
-            ),
-            "hybrid": (
-                "Modo atual: GraphRAG hibrido. Voce recebeu evidencia estrutural e textual. "
-                "Use o grafo para explicar a conexao e o texto para sustentar a interpretacao narrativa. "
-                "Nao misture os tipos de evidencia: diga o que veio do grafo e o que veio do texto quando isso for relevante."
-            ),
-        }.get(mode, "Modo atual: retrieval com evidencias disponiveis. Responda apenas com a evidencia fornecida.")
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "Voce escreve a resposta final de um sistema RAG/GraphRAG de producao sobre Senhor dos Aneis. "
-                    "Responda em portugues brasileiro, com tom direto, natural e conclusivo. "
-                    "Use somente as evidencias fornecidas abaixo; nao use conhecimento externo e nao invente fatos, arestas, "
-                    "falas, capitulos ou citacoes. "
-                    "Nao exponha raciocinio interno, passos ocultos, texto de thinking, nem explique o mecanismo de RAG "
-                    "a menos que a pergunta seja explicitamente sobre o metodo. "
-                    "Nao use a expressao 'contexto recuperado' no texto final. Prefira 'os trechos encontrados', "
-                    "'a estrutura do grafo' ou 'as evidencias disponiveis', conforme o modo. "
-                    "Comece pela resposta em 1 ou 2 frases, sem introducoes como 'com base no contexto', "
-                    "'com base nos trechos', 'a partir do contexto' ou equivalentes. "
-                    "Depois, se houver suporte util, inclua no maximo 3 bullets curtos em 'Evidencias'. "
-                    "Separe evidencia textual de evidencia estrutural apenas quando isso ajudar a entender a resposta. "
-                    "Trate caminhos, vizinhos, coocorrencias e mencoes como evidencia estrutural indireta, nao como "
-                    "prova causal ou relacao direta. "
-                    "Nao diga 'nao ha evidencia direta' quando houver evidencia indireta suficiente para responder; "
-                    "nesse caso, responda e qualifique a conexao. "
-                    "Use uma secao 'Limite' somente quando as evidencias fornecidas forem vazias, contraditorias ou realmente "
-                    "insuficiente para responder. "
-                    "Quando houver limite, descreva a lacuna de forma especifica e curta; nao transforme falha de retrieval "
-                    "em conclusao sobre o corpus inteiro. "
-                    "Nao afirme que uma relacao ou fato nao existe no corpus inteiro; fale apenas das evidencias fornecidas. "
-                    "Nao escreva frases meta sobre a aula, a apresentacao, a turma, a demo ou o sistema. "
-                    f"{mode_instruction}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "/no_think\n"
-                    "Tarefa: gere apenas a resposta final para o usuario.\n"
-                    f"Pergunta: {question}\n\n"
-                    "Evidencias disponiveis:\n"
-                    f"{context}"
-                ),
-            },
-        ]
-
-    @staticmethod
-    def polish_llm_answer(answer: str, mode: str) -> str:
-        labels = {
-            "rag": {
-                "plain": "a evidencia textual disponivel",
-                "in": "na evidencia textual disponivel",
-                "of": "da evidencia textual disponivel",
-            },
-            "graph": {
-                "plain": "a estrutura do grafo",
-                "in": "na estrutura do grafo",
-                "of": "da estrutura do grafo",
-            },
-            "hybrid": {
-                "plain": "a evidencia disponivel",
-                "in": "na evidencia disponivel",
-                "of": "da evidencia disponivel",
-            },
-        }.get(
-            mode,
-            {
-                "plain": "a evidencia disponivel",
-                "in": "na evidencia disponivel",
-                "of": "da evidencia disponivel",
-            },
-        )
-
-        def preserve_case(match: re.Match[str], replacement: str) -> str:
-            return replacement[:1].upper() + replacement[1:] if match.group(0)[:1].isupper() else replacement
-
-        polished = answer
-        polished = re.sub(
-            r"\bno contexto recuperado\b",
-            lambda match: preserve_case(match, labels["in"]),
-            polished,
-            flags=re.IGNORECASE,
-        )
-        polished = re.sub(
-            r"\bdo contexto recuperado\b",
-            lambda match: preserve_case(match, labels["of"]),
-            polished,
-            flags=re.IGNORECASE,
-        )
-        polished = re.sub(
-            r"\b(?:o\s+)?contexto recuperado\b",
-            lambda match: preserve_case(match, labels["plain"]),
-            polished,
-            flags=re.IGNORECASE,
-        )
-        polished = re.sub(r"trechos fornecidas", "trechos encontrados", polished, flags=re.IGNORECASE)
-        return polished.strip()
 
     def retrieve_text(
         self,

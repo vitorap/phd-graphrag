@@ -848,6 +848,42 @@ function renderAnswer(text) {
   return escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
+function renderEvidenceList(title, items, className) {
+  if (!items?.length) return "";
+  return `
+    <section class="structured-evidence ${className}">
+      <h4>${escapeHtml(title)}</h4>
+      <ul>
+        ${items
+          .slice(0, 3)
+          .map((item) => `<li><strong>${escapeHtml(item.label || item.source || "Evidencia")}</strong><span>${escapeHtml(item.detail || "")}</span></li>`)
+          .join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function renderStructuredAnswer(result) {
+  const structured = result?.structuredAnswer;
+  if (!structured) return renderAnswer(result?.answer || "");
+  const confidence = structured.confidence ? `<span class="confidence-badge">${escapeHtml(structured.confidence)}</span>` : "";
+  const limits = structured.limits
+    ? `<section class="structured-limit"><h4>Limite</h4><p>${escapeHtml(structured.limits)}</p></section>`
+    : "";
+  return `
+    <article class="structured-answer">
+      <div class="structured-answer-head">
+        <strong>Resposta</strong>
+        ${confidence}
+      </div>
+      <p>${renderAnswer(structured.answer || result.answer || "")}</p>
+      ${renderEvidenceList("Evidencias textuais", structured.textEvidence || [], "text-evidence")}
+      ${renderEvidenceList("Evidencias estruturais", structured.graphEvidence || [], "graph-evidence")}
+      ${limits}
+    </article>
+  `;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1186,8 +1222,15 @@ function renderGraphRagTrace(result) {
     ? docs.map((doc) => renderTraceDocument(doc)).join("")
     : `<article class="trace-doc-empty">Nenhum chunk textual recuperado para esta execucao.</article>`;
 
-  tracePromptMeta.textContent = `${prompt.selectedChars || 0} chars · ~${prompt.estimatedTokens || 0} tokens`;
-  tracePromptSections.innerHTML = (prompt.sections || [])
+  const promptTemplate = prompt.template ? ` · ${prompt.template}` : "";
+  const promptSchema = prompt.schema ? ` · schema ${prompt.schema}` : "";
+  tracePromptMeta.textContent = `${prompt.selectedChars || 0} chars · ~${prompt.estimatedTokens || 0} tokens${promptTemplate}${promptSchema}`;
+  const promptSections = [
+    ...(prompt.sections || []),
+    ...(prompt.template ? [{ name: "Template", chars: String(prompt.template).length, enabled: true }] : []),
+    ...(prompt.schema ? [{ name: "Schema", chars: String(prompt.schema).length, enabled: true }] : []),
+  ];
+  tracePromptSections.innerHTML = promptSections
     .map(
       (section) => `
         <span class="${section.enabled ? "enabled" : "disabled"}">
@@ -1262,7 +1305,7 @@ async function askQuestion(modeOverride = null) {
     state.lastAnswerMode = result.mode || requestedMode;
     state.lastQuestion = questionInput.value;
     setTags(result.entities || []);
-    answerBox.innerHTML = renderAnswer(result.answer || "");
+    answerBox.innerHTML = renderStructuredAnswer(result);
     contextBox.textContent = result.context || "";
     answerMeta.textContent = answerMetaText(result, topKInput.value);
     llmStatus.textContent = `${result.model} · ${result.llmStatus}`;
@@ -1425,7 +1468,7 @@ function renderCompare(results) {
         <span class="mode-badge">${badges[mode]}</span>
       </div>
       <div class="compare-meta">${escapeHtml(method)}${escapeHtml(scoreText)}${escapeHtml(sourceText)} · entidades: ${escapeHtml(entities)}${escapeHtml(graphMetaText)}</div>
-      <div class="compare-answer">${renderAnswer(result.answer || "")}</div>
+      <div class="compare-answer">${renderStructuredAnswer(result)}</div>
       <div class="method-note">${limits[mode]}</div>
       ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : `<p class="muted">Este modo nao recupera chunks textuais.</p>`}
     `;
@@ -1588,7 +1631,7 @@ async function synthesizeGraph() {
         model: modelInput.value || null,
       }),
     });
-    graphSynthesis.innerHTML = `<strong>Leitura Graph-only · ${escapeHtml(payload.model || "Ollama")}</strong><p>${renderAnswer(payload.answer || "")}</p>`;
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only · ${escapeHtml(payload.model || "Ollama")}</strong><div>${renderStructuredAnswer(payload)}</div>`;
     llmStatus.textContent = `${payload.model || modelInput.value || "Ollama"} · ${payload.llmStatus}`;
   } catch (error) {
     graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p class="error-text">${escapeHtml(error.message)}</p>`;
