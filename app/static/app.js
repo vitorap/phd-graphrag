@@ -1588,13 +1588,14 @@ function renderStrategyCompare(results) {
 
 function compareEvidenceDocs(mode, result) {
   const docs = result.documents || [];
-  if (mode !== "rag") return docs.slice(0, 4);
+  if (!docs.length || mode === "graph") return [];
 
   const bySource = result.documentsBySource || groupDocumentsBySource(docs);
   const balanced = [
     ...(bySource.book || []).slice(0, 2),
     ...(bySource.dialogue || []).slice(0, 2),
   ];
+  if (!balanced.length) return docs.slice(0, 4);
   const seen = new Set(balanced.map((doc) => doc.id));
   for (const doc of docs) {
     if (balanced.length >= 4) break;
@@ -1612,7 +1613,7 @@ function renderCompare(results) {
   const limits = {
     rag: "Texto puro: cosine separado por livros e scripts; sem boost estrutural.",
     graph: "Graph-only: subgrafo, caminhos e centralidade; zero chunks recuperados.",
-    hybrid: `GraphRAG: ${strategyById(graphRagStrategyInput?.value || "kg_index").shortName}; final = cosine + reforco do grafo.`,
+    hybrid: `GraphRAG: ${strategyById(graphRagStrategyInput?.value || "kg_index").shortName}; cosine + reforco do grafo, com evidencias textuais balanceadas por fonte.`,
   };
   const badges = {
     rag: "texto",

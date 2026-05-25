@@ -24,6 +24,8 @@
   --radius-lg: 18px;
   --radius-xl: 24px;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shell-padding: clamp(10px, 0.55vw, 18px);
+  --page-max: min(2880px, calc(100vw - (2 * var(--shell-padding))));
   --font-display: "Hoefler Text", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   --font-body: "Iowan Old Style", "Hoefler Text", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   --font-ui: "Iowan Old Style", "Hoefler Text", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
@@ -113,7 +115,7 @@ h4 {
 
 .app-shell {
   min-height: 100vh;
-  padding: 18px;
+  padding: var(--shell-padding);
   position: relative;
   z-index: 1;
 }
@@ -122,7 +124,8 @@ h4 {
 .stats-strip,
 .workspace {
   margin-inline: auto;
-  max-width: 1680px;
+  max-width: var(--page-max);
+  width: 100%;
 }
 
 .topbar {
@@ -395,7 +398,7 @@ h4 {
 
 .workspace {
   display: grid;
-  gap: 14px;
+  gap: clamp(10px, 0.55vw, 16px);
   grid-template-areas:
     "controls content graph"
     "controls answer graph";
@@ -2542,6 +2545,32 @@ th {
 .quiz-answer {
   color: var(--green-dark);
   font-weight: 800;
+}
+
+@media (min-width: 1800px) {
+  .workspace {
+    grid-template-columns: 300px minmax(720px, 1.18fr) minmax(560px, 0.82fr);
+  }
+
+  .workspace[data-view="overview"] {
+    grid-template-columns: 280px minmax(760px, 1.2fr) minmax(560px, 0.8fr);
+  }
+
+  .workspace[data-view="rag"] {
+    grid-template-columns: 300px minmax(760px, 1.08fr) minmax(520px, 0.92fr);
+  }
+
+  .workspace[data-view="graph"] {
+    grid-template-columns: 300px minmax(820px, 1.05fr) minmax(660px, 0.95fr);
+  }
+
+  .workspace[data-view="graphrag"] {
+    grid-template-columns: 300px minmax(760px, 1.08fr) minmax(620px, 0.92fr);
+  }
+
+  .workspace[data-view="compare"] {
+    grid-template-columns: 290px minmax(0, 1fr);
+  }
 }
 
 .graph-tools {

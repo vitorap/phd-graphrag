@@ -23,6 +23,8 @@ GRAPH_RAG_STRATEGY_ORDER = [
     "cypher",
 ]
 
+TEXT_SOURCE_TYPES = ("book", "dialogue")
+
 GRAPH_RAG_STRATEGIES: dict[str, dict[str, Any]] = {
     "kg_index": {
         "id": "kg_index",
@@ -476,7 +478,7 @@ class GraphRAG:
         }
 
         if strategy == "vector_first":
-            seed_docs = self.retrieve_text_ranked(
+            seed_docs = self.retrieve_text_ranked_balanced(
                 question,
                 entities=[],
                 graph={},
@@ -487,7 +489,10 @@ class GraphRAG:
             derived_entities = self.ranked_mentions(seed_docs, limit=8)
             graph_seeds = self.unique_names(derived_entities)
             degraded = False
-            notes = ["O grafo foi expandido depois dos primeiros hits vetoriais; o ranking textual fica cosine puro."]
+            notes = [
+                "O grafo foi expandido depois dos primeiros hits vetoriais; o ranking textual fica cosine puro.",
+                "As evidencias textuais sao balanceadas entre livros e scripts quando ambas as fontes existem.",
+            ]
             if not graph_seeds:
                 graph_seeds = entities
                 degraded = True
@@ -502,7 +507,8 @@ class GraphRAG:
                     "notes": notes,
                 }
             )
-            return graph, self.tag_documents(seed_docs[:top_k], "vector_first"), runtime
+            docs = self.source_balanced_documents(seed_docs, top_k)
+            return graph, self.tag_documents(docs, "vector_first"), runtime
 
         if strategy == "community":
             graph = self.neo4j.community_subgraph_for_seeds(entities, limit=180)
@@ -522,7 +528,7 @@ class GraphRAG:
                     "notes": notes,
                 }
             )
-            docs = self.retrieve_text_ranked(
+            docs = self.retrieve_text_ranked_balanced(
                 question,
                 entities=entities,
                 graph=graph,
@@ -532,13 +538,14 @@ class GraphRAG:
                 boost_entities=community_entities,
             )
             docs = self.rerank_by_mentions(docs, entities, community_entities, "community", seed_pair_bonus=False)
-            return graph, self.tag_documents(docs[:top_k], "community"), runtime
+            docs = self.source_balanced_documents(docs, top_k)
+            return graph, self.tag_documents(docs, "community"), runtime
 
         if strategy == "cypher":
             query_entities = self.unique_names(entities)
             if not query_entities:
                 graph = self.neo4j.global_graph(limit=120)
-                docs = self.retrieve_text_ranked(
+                docs = self.retrieve_text_ranked_balanced(
                     question,
                     entities=[],
                     graph={},
@@ -555,7 +562,8 @@ class GraphRAG:
                         "notes": ["Sem entidade resolvida, nao ha parametros seguros para a query simbolica; fallback usa busca vetorial pura."],
                     }
                 )
-                return graph, self.tag_documents(docs[:top_k], "cypher_fallback_vector"), runtime
+                docs = self.source_balanced_documents(docs, top_k)
+                return graph, self.tag_documents(docs, "cypher_fallback_vector"), runtime
 
             graph = self.neo4j.mentions_graph_for_entities(query_entities, limit=max(top_k * 3, 18))
             runtime.update(
@@ -565,9 +573,9 @@ class GraphRAG:
                     "notes": ["A consulta simbolica usa MENTIONS como ponte auditavel entre entidades e documentos."],
                 }
             )
-            docs = self.entity_documents(query_entities, question, method="cypher_mentions", limit=top_k)
+            docs = self.entity_documents(query_entities, question, method="cypher_mentions", limit=max(top_k * 4, 24))
             if not docs:
-                docs = self.retrieve_text_ranked(
+                docs = self.retrieve_text_ranked_balanced(
                     question,
                     entities=query_entities,
                     graph=graph,
@@ -585,7 +593,8 @@ class GraphRAG:
                         ],
                     }
                 )
-            return graph, self.tag_documents(docs[:top_k], "cypher"), runtime
+            docs = self.source_balanced_documents(docs, top_k)
+            return graph, self.tag_documents(docs, "cypher"), runtime
 
         graph = self.neo4j.subgraph_for_seeds(entities, hops=hops, limit=180)
 
@@ -596,10 +605,13 @@ class GraphRAG:
                 {
                     "graphSeeds": entities,
                     "derivedEntities": linked_entities[:12],
-                    "notes": ["O indice vetorial e varrido com filtro duro: documentos precisam mencionar sementes ou nos do subgrafo."],
+                    "notes": [
+                        "O indice vetorial e varrido com filtro duro: documentos precisam mencionar sementes ou nos do subgrafo.",
+                        "A selecao final preserva livros e scripts quando ambas as fontes retornam candidatos.",
+                    ],
                 }
             )
-            docs = self.retrieve_text_ranked(
+            docs = self.retrieve_text_ranked_balanced(
                 question,
                 entities=entities,
                 graph=graph,
@@ -614,7 +626,8 @@ class GraphRAG:
                     docs,
                     self.entity_documents(required_entities[:40], question, method="graph_filter_mentions", limit=top_k),
                 )
-            return graph, self.tag_documents(docs[:top_k], "graph_filter"), runtime
+            docs = self.source_balanced_documents(docs, top_k)
+            return graph, self.tag_documents(docs, "graph_filter"), runtime
 
         if strategy == "path":
             path_focus = self.path_focus(entities, graph)
@@ -631,7 +644,7 @@ class GraphRAG:
                         ],
                     }
                 )
-                docs = self.retrieve_text_ranked(
+                docs = self.retrieve_text_ranked_balanced(
                     question,
                     entities=entities,
                     graph=graph,
@@ -639,7 +652,8 @@ class GraphRAG:
                     limit=top_k,
                     apply_boost=True,
                 )
-                return graph, self.tag_documents(docs[:top_k], "path_fallback_kg_index"), runtime
+                docs = self.source_balanced_documents(docs, top_k)
+                return graph, self.tag_documents(docs, "path_fallback_kg_index"), runtime
             runtime.update(
                 {
                     "graphSeeds": entities,
@@ -649,7 +663,7 @@ class GraphRAG:
                     "notes": ["Caminhos curtos e conectores 2-hop recebem peso extra no reranking."],
                 }
             )
-            candidates = self.retrieve_text_ranked(
+            candidates = self.retrieve_text_ranked_balanced(
                 question,
                 entities=entities,
                 graph=graph,
@@ -662,9 +676,10 @@ class GraphRAG:
             focused_docs = self.filter_docs_by_mentions(docs, [*entities, *path_entities])
             if len(focused_docs) >= max(2, top_k // 3):
                 docs = focused_docs
-            return graph, self.tag_documents(docs[:top_k], "path"), runtime
+            docs = self.source_balanced_documents(docs, top_k)
+            return graph, self.tag_documents(docs, "path"), runtime
 
-        docs = self.retrieve_text_ranked(
+        docs = self.retrieve_text_ranked_balanced(
             question,
             entities=entities,
             graph=graph,
@@ -672,7 +687,10 @@ class GraphRAG:
             limit=top_k,
             apply_boost=True,
         )
-        runtime["notes"] = ["Estrategia padrao: subgrafo k-hop reforca o ranking vetorial."]
+        runtime["notes"] = [
+            "Estrategia padrao: subgrafo k-hop reforca o ranking vetorial.",
+            "A selecao textual final e balanceada entre livros e scripts quando ambas as fontes existem.",
+        ]
         return graph, self.tag_documents(docs, "kg_index"), runtime
 
     @staticmethod
@@ -739,6 +757,57 @@ class GraphRAG:
                 seen.add(key)
                 merged.append(doc)
         return merged
+
+    @staticmethod
+    def source_balanced_documents(documents: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        if limit <= 0 or not documents:
+            return []
+
+        ranked = sorted(documents, key=lambda item: float(item.get("score") or 0.0), reverse=True)
+        buckets = {
+            source: [doc for doc in ranked if doc.get("sourceType") == source]
+            for source in TEXT_SOURCE_TYPES
+        }
+        if sum(1 for source in TEXT_SOURCE_TYPES if buckets[source]) < 2:
+            return ranked[:limit]
+
+        base = limit // len(TEXT_SOURCE_TYPES)
+        desired = {source: base for source in TEXT_SOURCE_TYPES}
+        remainder = limit - sum(desired.values())
+
+        def next_score(source: str) -> float:
+            bucket = buckets[source]
+            index = desired[source]
+            if index >= len(bucket):
+                return float("-inf")
+            return float(bucket[index].get("score") or 0.0)
+
+        for source in sorted(TEXT_SOURCE_TYPES, key=next_score, reverse=True):
+            if remainder <= 0:
+                break
+            desired[source] += 1
+            remainder -= 1
+
+        selected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for source in TEXT_SOURCE_TYPES:
+            for doc in buckets[source][: desired[source]]:
+                key = str(doc.get("id") or len(seen))
+                if key in seen:
+                    continue
+                seen.add(key)
+                selected.append(doc)
+
+        for doc in ranked:
+            if len(selected) >= limit:
+                break
+            key = str(doc.get("id") or len(seen))
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(doc)
+
+        return sorted(selected, key=lambda item: float(item.get("score") or 0.0), reverse=True)[:limit]
 
     def entity_documents(
         self,
@@ -1413,6 +1482,47 @@ class GraphRAG:
             source_type=None,
             apply_boost=mode == "hybrid",
         )
+
+    def retrieve_text_ranked_balanced(
+        self,
+        question: str,
+        entities: list[str],
+        graph: dict[str, Any],
+        mode: str,
+        limit: int = 8,
+        apply_boost: bool = False,
+        required_entities: list[str] | None = None,
+        boost_entities: list[str] | None = None,
+        candidate_multiplier: int = 4,
+    ) -> list[dict[str, Any]]:
+        source_limit = max(limit, (limit * candidate_multiplier) // len(TEXT_SOURCE_TYPES))
+        groups = [
+            self.retrieve_text_ranked(
+                question,
+                entities=entities,
+                graph=graph,
+                mode=mode,
+                limit=source_limit,
+                source_type=source_type,
+                apply_boost=apply_boost,
+                required_entities=required_entities,
+                boost_entities=boost_entities,
+            )
+            for source_type in TEXT_SOURCE_TYPES
+        ]
+        merged = self.merge_documents(*groups)
+        if not merged:
+            merged = self.retrieve_text_ranked(
+                question,
+                entities=entities,
+                graph=graph,
+                mode=mode,
+                limit=max(limit, limit * candidate_multiplier),
+                apply_boost=apply_boost,
+                required_entities=required_entities,
+                boost_entities=boost_entities,
+            )
+        return self.source_balanced_documents(merged, limit)
 
     def retrieve_text_ranked(
         self,
