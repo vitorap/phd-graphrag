@@ -28,10 +28,24 @@ const llmStatus = document.querySelector("#llmStatus");
 const vectorStatus = document.querySelector("#vectorStatus");
 const promptGrid = document.querySelector("#promptGrid");
 const ragEvidence = document.querySelector("#ragEvidence");
+const traceGroundingMeta = document.querySelector("#traceGroundingMeta");
+const traceEntities = document.querySelector("#traceEntities");
+const traceGraphMeta = document.querySelector("#traceGraphMeta");
+const traceGraphEvidence = document.querySelector("#traceGraphEvidence");
+const traceRetrievalMeta = document.querySelector("#traceRetrievalMeta");
+const traceDocuments = document.querySelector("#traceDocuments");
+const tracePromptMeta = document.querySelector("#tracePromptMeta");
+const tracePromptSections = document.querySelector("#tracePromptSections");
+const tracePromptPreview = document.querySelector("#tracePromptPreview");
 const cypherExamples = document.querySelector("#cypherExamples");
+const cypherPromptInput = document.querySelector("#cypherPromptInput");
 const cypherInput = document.querySelector("#cypherInput");
 const cypherResults = document.querySelector("#cypherResults");
 const runCypherButton = document.querySelector("#runCypherButton");
+const generateCypherButton = document.querySelector("#generateCypherButton");
+const synthesizeGraphButton = document.querySelector("#synthesizeGraphButton");
+const cypherGenerationStatus = document.querySelector("#cypherGenerationStatus");
+const graphSynthesis = document.querySelector("#graphSynthesis");
 const copyCypherButton = document.querySelector("#copyCypherButton");
 const copyStarterCypher = document.querySelector("#copyStarterCypher");
 const graphLessonTitle = document.querySelector("#graphLessonTitle");
@@ -44,10 +58,19 @@ const lectureDuration = document.querySelector("#lectureDuration");
 const lectureTitle = document.querySelector("#lectureTitle");
 const lectureProgress = document.querySelector("#lectureProgress");
 const lectureProgressBar = document.querySelector("#lectureProgressBar");
+const lectureQuestion = document.querySelector("#lectureQuestion");
+const lectureModePill = document.querySelector("#lectureModePill");
+const lectureContrasts = document.querySelector("#lectureContrasts");
 const lecturePoints = document.querySelector("#lecturePoints");
 const lectureDemoAction = document.querySelector("#lectureDemoAction");
+const lectureArchitecturePanel = document.querySelector("#lectureArchitecturePanel");
+const lectureArchitectureName = document.querySelector("#lectureArchitectureName");
+const lectureArchitectureFlow = document.querySelector("#lectureArchitectureFlow");
+const lectureArchitectureTakeaway = document.querySelector("#lectureArchitectureTakeaway");
+const lectureArchitectureRisk = document.querySelector("#lectureArchitectureRisk");
 const lectureSpeakerNotes = document.querySelector("#lectureSpeakerNotes");
 const quizQuestion = document.querySelector("#quizQuestion");
+const quizOptions = document.querySelector("#quizOptions");
 const quizAnswer = document.querySelector("#quizAnswer");
 const revealQuizButton = document.querySelector("#revealQuizButton");
 const applyLectureButton = document.querySelector("#applyLectureButton");
@@ -56,6 +79,9 @@ const nextLectureButton = document.querySelector("#nextLectureButton");
 const zoomOutButton = document.querySelector("#zoomOutButton");
 const zoomResetButton = document.querySelector("#zoomResetButton");
 const zoomInButton = document.querySelector("#zoomInButton");
+const zoomFitButton = document.querySelector("#zoomFitButton");
+const graphDetail = document.querySelector("#graphDetail");
+const graphLegend = document.querySelector("#graphLegend");
 
 const COLORS = {
   character: "#1f6b4b",
@@ -135,6 +161,9 @@ const state = {
   hasCompare: false,
   lastAnswerMode: null,
   lastQuestion: "",
+  lastGraph: null,
+  lastCypherResult: null,
+  selectedGraphNodeId: null,
   graphViewBox: null,
   dragging: false,
   dragStart: null,
@@ -173,6 +202,24 @@ function resetPipelinePlaceholder() {
   document.querySelector("#pipeAnswer").textContent = "-";
 }
 
+function renderGraphRagTracePlaceholder() {
+  if (!traceEntities) return;
+  traceGroundingMeta.textContent = "aguardando execucao";
+  traceEntities.innerHTML = `<span class="trace-empty">A pergunta vai resolver entidades por aliases.</span>`;
+  traceGraphMeta.textContent = "k-hop deterministico";
+  traceGraphEvidence.innerHTML = `
+    <div class="trace-row">
+      <strong>Estrategia</strong>
+      <span>Entity seeds -> subgrafo k-hop no Neo4j -> caminhos e conectores</span>
+    </div>
+  `;
+  traceRetrievalMeta.textContent = "cosine + boost estrutural";
+  traceDocuments.innerHTML = `<article class="trace-doc-empty">Execute o GraphRAG para ver quais chunks receberam boost do subgrafo.</article>`;
+  tracePromptMeta.textContent = "contexto estrutural + textual";
+  tracePromptSections.innerHTML = "";
+  tracePromptPreview.textContent = "O prompt final enviado ao LLM aparece aqui depois da execução.";
+}
+
 function renderComparePlaceholder() {
   compareResults.innerHTML = `
     <article class="compare-placeholder">RAG textual: cosine puro sobre livros e scripts.</article>
@@ -190,6 +237,7 @@ function updateViewPlaceholders(name) {
   if (name === "graphrag" && state.lastAnswerMode !== "hybrid") {
     setAnswerPlaceholder("GraphRAG aguardando execucao", "Execute o GraphRAG para preencher entidades, subgrafo, evidencias e resposta.");
     resetPipelinePlaceholder();
+    renderGraphRagTracePlaceholder();
   }
   if (name === "compare" && !state.hasCompare) {
     renderComparePlaceholder();
@@ -344,6 +392,12 @@ function setGraphViewBox(width, height) {
   applyGraphViewBox();
 }
 
+function fitGraph() {
+  const width = graphSvg.clientWidth || 760;
+  const height = graphSvg.clientHeight || 520;
+  setGraphViewBox(width, height);
+}
+
 function applyGraphViewBox() {
   const box = state.graphViewBox;
   if (!box) return;
@@ -366,16 +420,117 @@ function zoomGraph(factor) {
   applyGraphViewBox();
 }
 
-function renderGraph(graph) {
+function graphNodeLabel(node) {
+  return node.name || node.sourceTitle || node.chapterTitle || node.id || "no";
+}
+
+function graphNodeMeta(node) {
+  const labels = (node.labels || []).join(", ") || "Entity";
+  const parts = [labels];
+  if (node.race) parts.push(`raca ${node.race}`);
+  if (node.community != null) parts.push(`comunidade ${node.community}`);
+  if (node.pagerank != null) parts.push(`PR ${Number(node.pagerank || 0).toFixed(4)}`);
+  return parts.join(" · ");
+}
+
+function edgeWeightLabel(edge) {
+  const weight = edge.weight ?? edge.confidence ?? 1;
+  const confidence = edge.confidence == null ? "" : ` · conf ${Number(edge.confidence).toFixed(3)}`;
+  const source = edge.sourceDataset ? ` · ${edge.sourceDataset}` : "";
+  return `peso ${Number(weight || 0).toFixed(3)}${confidence}${source}`;
+}
+
+function renderGraphLegend(nodes, edges) {
+  if (!graphLegend) return;
+  const nodeCounts = nodes.reduce((counts, node) => {
+    const group = node.group || "entity";
+    counts[group] = (counts[group] || 0) + 1;
+    return counts;
+  }, {});
+  const edgeCounts = edges.reduce((counts, edge) => {
+    const type = edge.type || "REL";
+    counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {});
+  const nodeItems = Object.entries(nodeCounts)
+    .sort((left, right) => right[1] - left[1])
+    .map(([group, count]) => `<span><i style="background:${COLORS[group] || COLORS.entity}"></i>${escapeHtml(group)} ${count}</span>`)
+    .join("");
+  const edgeItems = Object.entries(edgeCounts)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 5)
+    .map(([type, count]) => `<span>${escapeHtml(type)} ${count}</span>`)
+    .join("");
+  graphLegend.innerHTML = nodeItems + edgeItems;
+}
+
+function setGraphDetail(html) {
+  if (graphDetail) graphDetail.innerHTML = html;
+}
+
+function clearGraphHighlight() {
+  state.selectedGraphNodeId = null;
+  graphSvg.querySelectorAll(".node-group, .edge").forEach((item) => {
+    item.classList.remove("selected", "neighbor", "dimmed");
+  });
+}
+
+function selectGraphNode(node, graph) {
   const nodes = graph.nodes || [];
   const edges = graph.edges || [];
+  const neighborIds = new Set([node.id]);
+  for (const edge of edges) {
+    if (edge.source === node.id) neighborIds.add(edge.target);
+    if (edge.target === node.id) neighborIds.add(edge.source);
+  }
+  state.selectedGraphNodeId = node.id;
+  graphSvg.querySelectorAll(".node-group").forEach((item) => {
+    const id = item.dataset.nodeId;
+    item.classList.toggle("selected", id === node.id);
+    item.classList.toggle("neighbor", id !== node.id && neighborIds.has(id));
+    item.classList.toggle("dimmed", !neighborIds.has(id));
+  });
+  graphSvg.querySelectorAll(".edge").forEach((item) => {
+    const connected = item.dataset.source === node.id || item.dataset.target === node.id;
+    item.classList.toggle("selected", connected);
+    item.classList.toggle("dimmed", !connected);
+  });
+  const degree = edges.filter((edge) => edge.source === node.id || edge.target === node.id).length;
+  setGraphDetail(`
+    <strong>${escapeHtml(graphNodeLabel(node))}</strong>
+    <span>${escapeHtml(graphNodeMeta(node))}</span>
+    <span>${degree} arestas incidentes · ${nodes.length} nos no subgrafo</span>
+  `);
+}
+
+function selectGraphEdge(edge) {
+  clearGraphHighlight();
+  graphSvg.querySelectorAll(".edge").forEach((item) => {
+    item.classList.toggle("selected", item.dataset.edgeId === edge.id);
+    item.classList.toggle("dimmed", item.dataset.edgeId !== edge.id);
+  });
+  setGraphDetail(`
+    <strong>${escapeHtml(edge.sourceName || edge.source)} -[${escapeHtml(edge.type || "REL")}]-> ${escapeHtml(edge.targetName || edge.target)}</strong>
+    <span>${escapeHtml(edgeWeightLabel(edge))}</span>
+    <span>${escapeHtml(edge.method || "relacao observada")}</span>
+  `);
+}
+
+function renderGraph(graph, options = {}) {
+  const nodes = graph.nodes || [];
+  const edges = graph.edges || [];
+  state.lastGraph = graph;
+  state.selectedGraphNodeId = null;
+  synthesizeGraphButton.disabled = nodes.length === 0 && !state.lastCypherResult;
   graphSvg.innerHTML = "";
   const width = graphSvg.clientWidth || 760;
   const height = graphSvg.clientHeight || 520;
   setGraphViewBox(width, height);
+  renderGraphLegend(nodes, edges);
 
   if (nodes.length === 0) {
     graphMeta.textContent = "Grafo vazio. Banco sem dados carregados.";
+    setGraphDetail("Sem nos para inspecionar.");
     return;
   }
 
@@ -402,11 +557,18 @@ function renderGraph(graph) {
     line.setAttribute("x2", scale.x(target.x || 0));
     line.setAttribute("y2", scale.y(target.y || 0));
     line.setAttribute("class", edgeClass(edge));
+    line.dataset.edgeId = edge.id || "";
+    line.dataset.source = edge.source || "";
+    line.dataset.target = edge.target || "";
     line.setAttribute("stroke-width", Math.min(5, 0.7 + Math.log2(Number(edge.weight || 1) + 1)));
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
     const weight = edge.weight || edge.confidence || 1;
     title.textContent = `${edge.sourceName} -[${edge.type}, peso=${weight}]-> ${edge.targetName}`;
     line.appendChild(title);
+    line.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectGraphEdge(edge);
+    });
     edgeLayer.appendChild(line);
   }
 
@@ -417,33 +579,39 @@ function renderGraph(graph) {
     const color = COLORS[node.group] || COLORS.entity;
     group.setAttribute("transform", `translate(${x}, ${y})`);
     group.setAttribute("class", "node-group");
+    group.dataset.nodeId = node.id || "";
 
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("r", Math.max(7, Number(node.size || 10)));
     circle.setAttribute("fill", color);
     circle.setAttribute("class", "node");
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = `${node.name} · ${node.kind || "Entity"} · PR ${Number(node.pagerank || 0).toFixed(4)}`;
+    title.textContent = `${graphNodeLabel(node)} · ${graphNodeMeta(node)}`;
     circle.appendChild(title);
 
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", "node-label");
     label.setAttribute("text-anchor", "middle");
     label.setAttribute("y", -Math.max(11, Number(node.size || 10)) - 6);
-    label.textContent = node.name;
+    label.textContent = graphNodeLabel(node);
 
     group.append(circle);
     if (labeledNodeIds.has(node.id)) {
       group.appendChild(label);
     }
-    group.addEventListener("click", () => {
-      centerInput.value = node.name;
+    group.addEventListener("dblclick", () => {
+      centerInput.value = graphNodeLabel(node);
       loadGraph();
+    });
+    group.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectGraphNode(node, graph);
     });
     nodeLayer.appendChild(group);
   }
 
-  graphMeta.textContent = `${nodes.length} nos · ${edges.length} arestas`;
+  graphMeta.textContent = options.meta || `${nodes.length} nos · ${edges.length} arestas`;
+  setGraphDetail(`${nodes.length} nos · ${edges.length} arestas. Clique em um no ou aresta para detalhes.`);
 }
 
 async function loadGraph() {
@@ -452,7 +620,13 @@ async function loadGraph() {
   graphMeta.textContent = "Carregando subgrafo...";
   try {
     const graph = await getJson(`/api/graph?center=${center}&hops=${hops}&limit=180`);
-    renderGraph(graph);
+    state.lastCypherResult = {
+      query: `center=${decodeURIComponent(center || "")}; hops=${decodeURIComponent(hops)}`,
+      rows: [],
+      graph,
+    };
+    renderGraph(graph, { meta: `Centro/Hops · ${graph.nodes?.length || 0} nos · ${graph.edges?.length || 0} arestas` });
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>Subgrafo por centro/hops carregado. Use Sintetizar Grafo para gerar uma leitura estrutural.</p>`;
   } catch (error) {
     graphMeta.textContent = `Erro: ${error.message}`;
   }
@@ -564,6 +738,144 @@ function renderRagEvidence(result) {
   }
 }
 
+function renderGraphRagTrace(result) {
+  if (!traceEntities) return;
+  const trace = result.trace || {};
+  const grounding = trace.grounding || {};
+  const graph = trace.graph || {};
+  const retrieval = trace.retrieval || {};
+  const prompt = trace.prompt || {};
+  const steps = trace.steps || [];
+  const stepById = steps.reduce((lookup, step) => {
+    lookup[step.id] = step;
+    return lookup;
+  }, {});
+
+  document.querySelector("#pipeEntities").textContent = stepById.grounding?.value || `${grounding.entityCount || 0} entidades`;
+  document.querySelector("#pipeGraph").textContent = stepById.graph?.value || `${graph.nodeCount || 0} nos / ${graph.edgeCount || 0} arestas`;
+  document.querySelector("#pipeVectors").textContent = stepById.retrieval?.value || `${retrieval.documents || 0} docs`;
+  document.querySelector("#pipeAnswer").textContent = stepById.prompt?.value || result.llmStatus || "-";
+
+  traceGroundingMeta.textContent = `${grounding.entityCount || 0} entidades resolvidas`;
+  const entities = grounding.entities || [];
+  traceEntities.innerHTML = entities.length
+    ? entities
+        .map((entity) => {
+          const aliases = (entity.aliases || []).slice(0, 4).join(", ");
+          const labels = (entity.labels || []).filter((label) => label !== "Entity").join(", ") || entity.kind || "Entity";
+          return `
+            <span class="trace-chip">
+              <strong>${escapeHtml(entity.name)}</strong>
+              <small>match: ${escapeHtml(entity.matchedAlias || entity.name)} · ${escapeHtml(labels)}</small>
+              ${aliases ? `<em>aliases: ${escapeHtml(aliases)}</em>` : ""}
+            </span>
+          `;
+        })
+        .join("")
+    : `<span class="trace-empty">Nenhuma entidade foi resolvida a partir da pergunta.</span>`;
+
+  const relTypes = Object.entries(graph.relationshipTypes || {})
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 5)
+    .map(([name, count]) => `${name} ${count}`)
+    .join(" · ");
+  traceGraphMeta.textContent = `${graph.nodeCount || 0} nos · ${graph.edgeCount || 0} arestas · hops ${graph.hops || hopsInput.value}`;
+  const paths = graph.paths || [];
+  const directEdges = graph.directEdges || [];
+  const connectors = graph.connectors || [];
+  traceGraphEvidence.innerHTML = `
+    <div class="trace-row">
+      <strong>Query</strong>
+      <span>${escapeHtml(graph.query?.label || "deterministic k-hop expansion")}</span>
+    </div>
+    <div class="trace-row">
+      <strong>Tipos</strong>
+      <span>${escapeHtml(relTypes || "sem arestas recuperadas")}</span>
+    </div>
+    <div class="trace-row">
+      <strong>Caminhos</strong>
+      <span>${
+        paths.length
+          ? paths.map((item) => escapeHtml(`${item.source} -> ${item.target}: ${item.path.join(" -> ")}`)).join("<br>")
+          : "sem caminho curto"
+      }</span>
+    </div>
+    <div class="trace-row">
+      <strong>Diretas</strong>
+      <span>${
+        directEdges.length
+          ? directEdges
+              .slice(0, 4)
+              .map((edge) => escapeHtml(`${edge.sourceName} -[${edge.type}]-> ${edge.targetName}`))
+              .join("<br>")
+          : "sem aresta direta entre seeds"
+      }</span>
+    </div>
+    <div class="trace-row">
+      <strong>Conectores</strong>
+      <span>${
+        connectors.length
+          ? connectors.map((item) => escapeHtml(`${item.name} (${Number(item.combinedWeight || 0).toFixed(0)})`)).join(", ")
+          : "sem conectores 2-hop"
+      }</span>
+    </div>
+    <details class="trace-cypher">
+      <summary>Cypher deterministico equivalente</summary>
+      <pre>${escapeHtml(graph.query?.cypher || "")}</pre>
+    </details>
+  `;
+
+  traceRetrievalMeta.textContent = `${retrieval.documents || 0} docs · ${retrieval.boostedDocuments || 0} boosted · ${retrieval.scoreMode || "score"}`;
+  const docs = retrieval.topDocuments || [];
+  traceDocuments.innerHTML = docs.length
+    ? docs.map((doc) => renderTraceDocument(doc)).join("")
+    : `<article class="trace-doc-empty">Nenhum chunk textual recuperado para esta execucao.</article>`;
+
+  tracePromptMeta.textContent = `${prompt.selectedChars || 0} chars · ~${prompt.estimatedTokens || 0} tokens`;
+  tracePromptSections.innerHTML = (prompt.sections || [])
+    .map(
+      (section) => `
+        <span class="${section.enabled ? "enabled" : "disabled"}">
+          <strong>${escapeHtml(section.name)}</strong>
+          <small>${section.enabled ? `${section.chars} chars` : "inativo"}</small>
+        </span>
+      `,
+    )
+    .join("");
+  tracePromptPreview.textContent = prompt.preview || "Sem contexto serializado para este modo.";
+}
+
+function renderTraceDocument(doc) {
+  const title = [doc.sourceTitle, doc.chapterTitle, doc.speaker ? `fala de ${doc.speaker}` : ""]
+    .filter(Boolean)
+    .join(" / ");
+  const vector = Number(doc.vectorScore || 0);
+  const boost = Number(doc.graphBoost || 0);
+  const finalScore = Number(doc.score || 0);
+  const boostWidth = Math.min(100, Math.max(0, boost * 260));
+  const seedHits = (doc.seedHits || []).join(", ");
+  const graphHits = (doc.graphHits || []).slice(0, 5).join(", ");
+  return `
+    <article class="trace-doc-card">
+      <div class="trace-doc-head">
+        <span class="source-badge">${escapeHtml(sourceLabel(doc.sourceType))}${doc.sourceRank ? ` #${doc.sourceRank}` : ""}</span>
+        <span>${escapeHtml(doc.boostReason || "ranked by vector similarity")}</span>
+      </div>
+      <h3>${escapeHtml(title || "Documento recuperado")}</h3>
+      <div class="trace-score-grid">
+        <span><strong>${vector.toFixed(3)}</strong><small>cosine</small></span>
+        <span><strong>${boost.toFixed(3)}</strong><small>boost</small></span>
+        <span><strong>${finalScore.toFixed(3)}</strong><small>final</small></span>
+      </div>
+      <div class="boost-meter" aria-label="Graph boost ${boost.toFixed(3)}">
+        <span style="width: ${boostWidth}%"></span>
+      </div>
+      <p>${escapeHtml(doc.snippet || "").slice(0, 380)}</p>
+      <small>${seedHits ? `seed hits: ${escapeHtml(seedHits)}` : "sem seed hit"}${graphHits ? ` · subgrafo: ${escapeHtml(graphHits)}` : ""}</small>
+    </article>
+  `;
+}
+
 function answerMetaText(result, fallbackTopK) {
   const mode = result.mode || "retrieval";
   if (mode === "graph") {
@@ -600,6 +912,7 @@ async function askQuestion(modeOverride = null) {
     if ((result.mode || requestedMode) === "rag") renderRagEvidence(result);
     if (result.graph && result.graph.nodes) renderGraph(result.graph);
     updatePipeline(result);
+    if ((result.mode || requestedMode) === "hybrid") renderGraphRagTrace(result);
     return result;
   } catch (error) {
     llmStatus.textContent = `Erro: ${error.message}`;
@@ -631,6 +944,7 @@ async function compareQuestion() {
       llmStatus.textContent = `${hybrid.model} · comparacao ${hybrid.llmStatus}`;
       if (hybrid.graph && hybrid.graph.nodes) renderGraph(hybrid.graph);
       updatePipeline(hybrid);
+      renderGraphRagTrace(hybrid);
     }
   } catch (error) {
     llmStatus.textContent = `Erro: ${error.message}`;
@@ -688,7 +1002,7 @@ function renderCompare(results) {
       <div class="compare-meta">${escapeHtml(method)}${escapeHtml(scoreText)}${escapeHtml(sourceText)} · entidades: ${escapeHtml(entities)}${escapeHtml(graphMetaText)}</div>
       <div class="compare-answer">${renderAnswer(result.answer || "")}</div>
       <div class="method-note">${limits[mode]}</div>
-      ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : `<p class="muted">Sem evidencias textuais diretas neste modo.</p>`}
+      ${evidence ? `<ol class="mini-evidence">${evidence}</ol>` : `<p class="muted">Este modo nao recupera chunks textuais.</p>`}
     `;
     compareResults.appendChild(card);
   }
@@ -722,8 +1036,9 @@ async function loadCypherExamples() {
       <span>${escapeHtml(example.explain)}</span>
       <small>${escapeHtml(visualHint)}</small>
     `;
-    button.addEventListener("click", () => {
-      selectCypherExample(example.id, { loadGraph: true });
+    button.addEventListener("click", async () => {
+      selectCypherExample(example.id);
+      await runCypher();
     });
     cypherExamples.appendChild(button);
   }
@@ -733,10 +1048,10 @@ async function loadCypherExamples() {
 function renderCypherLesson(example) {
   if (!example) {
     graphLessonTitle.textContent = "Query customizada";
-    graphLessonText.textContent = "Consultas read-only retornam tabela; exemplos predefinidos tambem sincronizam o subgrafo.";
-    graphLessonGnn.textContent = "Queries livres nao tem mapeamento GNN predefinido.";
+    graphLessonText.textContent = "Queries que retornam p, nos ou relacoes atualizam o grafo; queries escalares ficam como tabela.";
+    graphLessonGnn.textContent = "Use o subgrafo retornado para discutir caminhos, vizinhos e message passing.";
     graphLessonVisual.textContent = "visualizacao livre";
-    graphLessonCaption.textContent = "O grafo permanece no centro e hops atuais.";
+    graphLessonCaption.textContent = "Para visualizar subgrafo no app e no Neo4j, prefira RETURN p ou RETURN a, r, b.";
     return;
   }
   const visual = example.visual || {};
@@ -763,6 +1078,22 @@ function selectCypherExample(exampleId, options = {}) {
   return example;
 }
 
+function renderCypherResult(result) {
+  const graph = result.graph || { nodes: [], edges: [] };
+  state.lastCypherResult = result;
+  if (graph.nodes?.length) {
+    renderGraph(graph, { meta: `Grafo da query · ${graph.nodes.length} nos · ${graph.edges?.length || 0} arestas` });
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>Subgrafo da query pronto para sintese estrutural.</p>`;
+  } else {
+    synthesizeGraphButton.disabled = false;
+    const statusText = result.graphStatus === "empty"
+      ? "Consulta sem linhas e sem subgrafo renderizavel."
+      : "Esta query retornou apenas valores escalares; use RETURN p ou RETURN a, r, b para visualizar subgrafo.";
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>${escapeHtml(statusText)}</p>`;
+  }
+  renderTable(result.columns || [], result.rows || [], cypherResults, result.graphStatus);
+}
+
 async function runCypher() {
   cypherResults.innerHTML = `<p class="muted">Rodando consulta read-only...</p>`;
   runCypherButton.disabled = true;
@@ -772,10 +1103,7 @@ async function runCypher() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: cypherInput.value, limit: 100 }),
     });
-    renderTable(result.columns || [], result.rows || [], cypherResults);
-    if (state.activeCypherExample?.visual?.center) {
-      await loadGraph();
-    }
+    renderCypherResult(result);
   } catch (error) {
     cypherResults.innerHTML = `<p class="error-text">${escapeHtml(error.message)}</p>`;
   } finally {
@@ -783,7 +1111,59 @@ async function runCypher() {
   }
 }
 
-function renderTable(columns, rows, target) {
+async function generateCypher() {
+  const question = cypherPromptInput.value.trim();
+  if (!question) {
+    cypherGenerationStatus.textContent = "Descreva a consulta antes de gerar.";
+    return;
+  }
+  generateCypherButton.disabled = true;
+  cypherGenerationStatus.textContent = "Ollama gerando Cypher read-only...";
+  try {
+    const result = await getJson("/api/cypher/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, model: modelInput.value || null }),
+    });
+    cypherInput.value = result.query || "";
+    state.activeCypherExample = null;
+    document.querySelectorAll(".query-item").forEach((item) => item.classList.remove("active"));
+    renderCypherLesson(null);
+    const warnings = (result.warnings || []).length ? ` Alertas: ${(result.warnings || []).join(" ")}` : "";
+    cypherGenerationStatus.textContent = `${result.explanation || "Query gerada para revisao."}${warnings}`;
+  } catch (error) {
+    cypherGenerationStatus.textContent = `Erro ao gerar Cypher: ${error.message}`;
+  } finally {
+    generateCypherButton.disabled = false;
+  }
+}
+
+async function synthesizeGraph() {
+  const result = state.lastCypherResult || { query: cypherInput.value, rows: [], graph: state.lastGraph || {} };
+  synthesizeGraphButton.disabled = true;
+  graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p>Ollama sintetizando estrutura...</p>`;
+  try {
+    const payload = await getJson("/api/cypher/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: cypherPromptInput.value.trim() || questionInput.value.trim() || "Explique o subgrafo recuperado.",
+        query: result.query || cypherInput.value,
+        rows: result.rows || [],
+        graph: result.graph || state.lastGraph || {},
+        model: modelInput.value || null,
+      }),
+    });
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only · ${escapeHtml(payload.model || "Ollama")}</strong><p>${renderAnswer(payload.answer || "")}</p>`;
+    llmStatus.textContent = `${payload.model || modelInput.value || "Ollama"} · ${payload.llmStatus}`;
+  } catch (error) {
+    graphSynthesis.innerHTML = `<strong>Leitura Graph-only</strong><p class="error-text">${escapeHtml(error.message)}</p>`;
+  } finally {
+    synthesizeGraphButton.disabled = false;
+  }
+}
+
+function renderTable(columns, rows, target, graphStatus = "scalar-only") {
   if (!rows.length) {
     target.innerHTML = `<p class="muted">Consulta sem linhas.</p>`;
     return;
@@ -797,7 +1177,10 @@ function renderTable(columns, rows, target) {
       return `<tr>${cells}</tr>`;
     })
     .join("");
-  target.innerHTML = `<p class="table-note">${rows.length} linhas retornadas. Tabela sincronizada com a consulta estrutural.</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  const note = graphStatus === "rendered"
+    ? `${rows.length} linhas retornadas. O grafo da direita veio da propria query.`
+    : `${rows.length} linhas retornadas. Resultado tabular sem subgrafo renderizavel.`;
+  target.innerHTML = `<p class="table-note">${escapeHtml(note)}</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function formatCell(value) {
@@ -811,6 +1194,52 @@ async function loadLecture() {
   const payload = await getJson("/api/lecture");
   state.lectureSteps = payload.steps || [];
   renderLecture();
+}
+
+function lectureModeName(mode) {
+  if (mode === "rag") return "RAG textual";
+  if (mode === "graph") return "Graph-only";
+  if (mode === "hybrid") return "GraphRAG";
+  if (mode === "compare") return "Comparacao";
+  return "Overview";
+}
+
+function renderLectureArchitecture(architecture) {
+  if (!architecture) {
+    lectureArchitecturePanel.hidden = true;
+    return;
+  }
+  lectureArchitecturePanel.hidden = false;
+  lectureArchitectureName.textContent = architecture.name || "Arquitetura";
+  lectureArchitectureFlow.innerHTML = (architecture.flow || [])
+    .map((item) => `<span>${escapeHtml(item)}</span>`)
+    .join("");
+  lectureArchitectureTakeaway.textContent = architecture.takeaway || "";
+  lectureArchitectureRisk.textContent = architecture.risk ? `Risco: ${architecture.risk}` : "";
+}
+
+function renderQuiz(quiz) {
+  quizQuestion.textContent = quiz?.question || "-";
+  quizAnswer.textContent = "";
+  quizOptions.innerHTML = "";
+  const options = quiz?.options || [];
+  for (const [index, option] of options.entries()) {
+    const button = document.createElement("button");
+    button.className = "quiz-option";
+    button.type = "button";
+    button.dataset.correct = option.correct ? "true" : "false";
+    button.innerHTML = `<span>${String.fromCharCode(65 + index)}</span><strong>${escapeHtml(option.label || "")}</strong>`;
+    button.addEventListener("click", () => {
+      quizOptions.querySelectorAll(".quiz-option").forEach((item) => {
+        item.classList.remove("selected", "correct", "incorrect");
+      });
+      button.classList.add("selected", option.correct ? "correct" : "incorrect");
+      quizAnswer.textContent = option.explanation || quiz.answer || "";
+    });
+    quizOptions.appendChild(button);
+  }
+  revealQuizButton.disabled = !quiz?.answer;
+  quizAnswer.dataset.answer = quiz?.answer || "";
 }
 
 function renderLecture() {
@@ -836,14 +1265,25 @@ function renderLecture() {
   lectureTitle.textContent = step.title;
   lectureProgress.textContent = `Etapa ${state.lectureIndex + 1} de ${steps.length}`;
   lectureProgressBar.style.width = `${progress}%`;
+  lectureQuestion.textContent = step.question || "Pergunta livre";
+  lectureModePill.textContent = lectureModeName(step.mode);
+  lectureContrasts.innerHTML = (step.methodContrasts || [])
+    .map(
+      (item) => `
+        <article class="method-contrast">
+          <strong>${escapeHtml(item.label || "")}</strong>
+          <p>${escapeHtml(item.text || "")}</p>
+        </article>
+      `,
+    )
+    .join("");
   lecturePoints.innerHTML = (step.talkingPoints || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("");
   lectureDemoAction.textContent = step.demoAction || "A etapa atual define pergunta, modo e parametros do workspace.";
+  renderLectureArchitecture(step.architecture);
   lectureSpeakerNotes.innerHTML = (step.speakerNotes || [])
     .map((note) => `<li>${escapeHtml(note)}</li>`)
     .join("");
-  quizQuestion.textContent = step.quiz?.question || "-";
-  quizAnswer.textContent = "";
-  quizAnswer.dataset.answer = step.quiz?.answer || "";
+  renderQuiz(step.quiz);
 }
 
 function applyLectureStep() {
@@ -890,8 +1330,15 @@ function setupGraphPanZoom() {
     event.preventDefault();
     zoomGraph(event.deltaY > 0 ? 1.12 : 0.88);
   });
+  graphSvg.addEventListener("click", (event) => {
+    if (event.target === graphSvg) {
+      clearGraphHighlight();
+      setGraphDetail("Clique em um no ou aresta para ver detalhes.");
+    }
+  });
   graphSvg.addEventListener("pointerdown", (event) => {
     if (!state.graphViewBox) return;
+    if (event.target.closest?.(".node-group") || event.target.closest?.(".edge")) return;
     state.dragging = true;
     state.dragStart = { x: event.clientX, y: event.clientY, box: { ...state.graphViewBox } };
     graphSvg.setPointerCapture(event.pointerId);
@@ -961,6 +1408,8 @@ hybridButton.addEventListener("click", () => askQuestion("hybrid"));
 compareButton.addEventListener("click", compareQuestion);
 compareViewButton.addEventListener("click", compareQuestion);
 runCypherButton.addEventListener("click", runCypher);
+generateCypherButton.addEventListener("click", generateCypher);
+synthesizeGraphButton.addEventListener("click", synthesizeGraph);
 copyCypherButton.addEventListener("click", () => copyText(cypherInput.value));
 copyStarterCypher.addEventListener("click", () => copyText(state.cypherExamples[0]?.query || ""));
 cypherInput.addEventListener("input", () => {
@@ -974,11 +1423,8 @@ centerInput.addEventListener("keydown", (event) => {
 });
 zoomOutButton.addEventListener("click", () => zoomGraph(1.18));
 zoomInButton.addEventListener("click", () => zoomGraph(0.85));
-zoomResetButton.addEventListener("click", () => {
-  const width = graphSvg.clientWidth || 760;
-  const height = graphSvg.clientHeight || 520;
-  setGraphViewBox(width, height);
-});
+zoomResetButton.addEventListener("click", fitGraph);
+zoomFitButton.addEventListener("click", fitGraph);
 prevLectureButton.addEventListener("click", () => {
   state.lectureIndex = Math.max(0, state.lectureIndex - 1);
   renderLecture();
@@ -997,6 +1443,10 @@ document.querySelectorAll(".lecture-nav-button").forEach((button) => {
 });
 revealQuizButton.addEventListener("click", () => {
   quizAnswer.textContent = quizAnswer.dataset.answer || "";
+  quizOptions.querySelectorAll(".quiz-option").forEach((item) => {
+    item.classList.toggle("correct", item.dataset.correct === "true");
+    item.classList.remove("incorrect", "selected");
+  });
 });
 applyLectureButton.addEventListener("click", applyLectureStep);
 

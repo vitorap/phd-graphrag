@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Mapping
 from typing import Any
 
 import networkx as nx
@@ -330,7 +331,31 @@ class Neo4jClient:
             return [dict(row) for row in rows]
 
     def run_readonly_cypher(self, query: str, limit: int = 100) -> dict[str, Any]:
-        query = query.strip()
+        wrapped = self.prepare_readonly_cypher(query, limit=limit)
+        with self.driver.session(default_access_mode="READ") as session:
+            result = session.run(wrapped)
+            keys = list(result.keys())
+            raw_rows = [{key: row.get(key) for key in keys} for row in result]
+
+        graph_nodes: dict[str, dict[str, Any]] = {}
+        graph_edges: dict[str, dict[str, Any]] = {}
+        for row in raw_rows:
+            collect_graph_values(row, graph_nodes, graph_edges)
+
+        graph = self._with_layout(list(graph_nodes.values()), list(graph_edges.values()))
+        if graph["nodes"]:
+            graph_status = "rendered"
+        elif raw_rows:
+            graph_status = "scalar-only"
+        else:
+            graph_status = "empty"
+
+        rows = [{key: json_safe(value) for key, value in row.items()} for row in raw_rows]
+        return {"columns": keys, "rows": rows, "query": wrapped, "graph": graph, "graphStatus": graph_status}
+
+    @staticmethod
+    def prepare_readonly_cypher(query: str, limit: int = 100) -> str:
+        query = query.strip().removesuffix(";").strip()
         if not query:
             raise ValueError("Cypher vazio")
         if ";" in query:
@@ -343,11 +368,7 @@ class Neo4jClient:
         wrapped = f"{query}\nLIMIT {int(max(1, min(limit, 300)))}"
         if re.search(r"\bLIMIT\b", query, re.IGNORECASE):
             wrapped = query
-        with self.driver.session(default_access_mode="READ") as session:
-            result = session.run(wrapped)
-            keys = result.keys()
-            rows = [{key: json_safe(row.get(key)) for key in keys} for row in result]
-        return {"columns": keys, "rows": rows, "query": wrapped}
+        return wrapped
 
     def _with_layout(self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Any]:
         by_id = {node["id"]: node for node in nodes}
@@ -416,6 +437,81 @@ def json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): json_safe(item) for key, item in value.items()}
     return value
+
+
+def collect_graph_values(value: Any, nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
+    if isinstance(value, Node):
+        nodes[element_id(value)] = graph_node(value)
+        return
+    if isinstance(value, Relationship):
+        nodes[element_id(value.start_node)] = graph_node(value.start_node)
+        nodes[element_id(value.end_node)] = graph_node(value.end_node)
+        edges[element_id(value)] = graph_edge(value)
+        return
+    if isinstance(value, Path):
+        for node in value.nodes:
+            nodes[element_id(node)] = graph_node(node)
+        for rel in value.relationships:
+            nodes[element_id(rel.start_node)] = graph_node(rel.start_node)
+            nodes[element_id(rel.end_node)] = graph_node(rel.end_node)
+            edges[element_id(rel)] = graph_edge(rel)
+        return
+    if isinstance(value, Mapping):
+        for item in value.values():
+            collect_graph_values(item, nodes, edges)
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            collect_graph_values(item, nodes, edges)
+
+
+def graph_node(value: Node) -> dict[str, Any]:
+    props = dict(value)
+    labels = list(value.labels)
+    return {
+        "id": element_id(value),
+        "name": node_display_name(value),
+        "labels": labels,
+        "kind": props.get("kind") or next((label for label in labels if label != "Entity"), None),
+        "race": props.get("race"),
+        "gender": props.get("gender"),
+        "pagerank": props.get("pagerank"),
+        "community": props.get("community"),
+        "weightedDegree": props.get("weightedDegree"),
+        "sourceTitle": props.get("sourceTitle"),
+        "chapterTitle": props.get("chapterTitle"),
+        "sourceType": props.get("sourceType"),
+        "speaker": props.get("speaker"),
+    }
+
+
+def graph_edge(value: Relationship) -> dict[str, Any]:
+    props = dict(value)
+    weight = props.get("weight")
+    confidence = props.get("confidence")
+    return {
+        "id": element_id(value),
+        "source": element_id(value.start_node),
+        "target": element_id(value.end_node),
+        "sourceName": node_display_name(value.start_node),
+        "targetName": node_display_name(value.end_node),
+        "type": value.type,
+        "weight": weight if weight is not None else (confidence if confidence is not None else 1),
+        "confidence": confidence,
+        "method": props.get("method"),
+        "sourceDataset": props.get("sourceDataset"),
+    }
+
+
+def node_display_name(value: Node) -> str:
+    props = dict(value)
+    for key in ("name", "title", "sourceTitle", "chapterTitle", "speaker", "id"):
+        if props.get(key):
+            return str(props[key])
+    labels = list(value.labels)
+    if labels:
+        return f"{labels[0]} {element_id(value)}"
+    return element_id(value)
 
 
 def element_id(value: Node | Relationship) -> str:

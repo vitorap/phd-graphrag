@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphRAG em Middle-earth</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260525-pure-rag" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-graph-workbench" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -127,7 +127,7 @@
             </label>
           </section>
 
-          <section class="control-block graph-controls" aria-label="Parametros do grafo">
+          <section class="control-block graph-controls" aria-label="Modo centro e saltos">
             <div class="control-row">
               <label class="field compact">
                 <span>Saltos</span>
@@ -143,7 +143,7 @@
                 <input id="centerInput" value="Frodo" />
               </label>
             </div>
-            <button id="graphButton" class="secondary-button wide-button" type="button">Atualizar Grafo</button>
+            <button id="graphButton" class="secondary-button wide-button" type="button">Atualizar Centro/Hops</button>
           </section>
 
           <section class="control-block model-controls" aria-label="Sintese local">
@@ -249,9 +249,12 @@
             <div class="view-head">
               <div>
                 <h2>Graph Workbench</h2>
-                <p>Cypher read-only, caminhos, vizinhos, PageRank e comunidades.</p>
+                <p>Cypher read-only com subgrafo real da query, centro/hops e sintese estrutural.</p>
               </div>
-              <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
+              <div class="button-row graph-head-actions">
+                <button class="secondary-button" id="synthesizeGraphButton" type="button" disabled>Sintetizar Grafo</button>
+                <button class="primary-button" id="runCypherButton" type="button">Rodar Cypher</button>
+              </div>
             </div>
             <article class="graph-lesson" id="graphLesson">
               <div class="lesson-head">
@@ -280,6 +283,14 @@
               </aside>
               <section class="query-editor">
                 <label class="field">
+                  <span>Descreva a consulta</span>
+                  <textarea id="cypherPromptInput" rows="3">relacoes entre elfos e orcs</textarea>
+                </label>
+                <div class="button-row">
+                  <button class="secondary-button" id="generateCypherButton" type="button">Gerar Cypher</button>
+                  <span class="generation-status" id="cypherGenerationStatus">O LLM gera a query; voce revisa antes de rodar.</span>
+                </div>
+                <label class="field">
                   <span>Cypher</span>
                   <textarea id="cypherInput" rows="9"></textarea>
                 </label>
@@ -288,6 +299,10 @@
                   <a class="ghost-link" href="http://localhost:7474" target="_blank" rel="noreferrer">Abrir Neo4j</a>
                 </div>
                 <div id="cypherResults" class="table-wrap"></div>
+                <article class="graph-synthesis" id="graphSynthesis">
+                  <strong>Leitura Graph-only</strong>
+                  <p>Rode uma query que retorne <code>p</code> ou <code>a, r, b</code> para sintetizar a estrutura.</p>
+                </article>
               </section>
             </div>
           </section>
@@ -295,17 +310,60 @@
           <section class="view" id="view-graphrag">
             <div class="view-head">
               <div>
-                <h2>GraphRAG Hibrido</h2>
-                <p>Entity resolution, expansao k-hop, evidencia estrutural e busca vetorial com boost do grafo.</p>
+                <h2>GraphRAG Trace</h2>
+                <p>Auditoria do fluxo: pergunta, entidades, subgrafo, reranking vetorial e prompt final.</p>
               </div>
               <button class="primary-button" id="hybridButton" type="button">Executar GraphRAG</button>
             </div>
-            <div class="pipeline-board" id="pipelineBoard">
-              <article><strong>1</strong><span>Entidades</span><p id="pipeEntities">-</p></article>
-              <article><strong>2</strong><span>k-hop</span><p id="pipeGraph">-</p></article>
-              <article><strong>3</strong><span>Vetores</span><p id="pipeVectors">-</p></article>
-              <article><strong>4</strong><span>Resposta</span><p id="pipeAnswer">-</p></article>
+            <div class="trace-method-grid">
+              <article class="trace-method-card">
+                <span>Variante ativa</span>
+                <h3>Hybrid Vector + Graph</h3>
+                <p>O grafo entra antes da sintese: entidades ativam um subgrafo k-hop e esse subgrafo reforca os chunks vetoriais que mencionam seus nos.</p>
+              </article>
+              <article class="trace-method-card">
+                <span>O que ainda nao e</span>
+                <h3>Sem Cypher gerado por LLM</h3>
+                <p>A estrategia atual usa query deterministica. Quando o modulo text-to-Cypher estiver pronto, ele entra como outra estrategia de grafo.</p>
+              </article>
             </div>
+            <div class="pipeline-board trace-steps" id="pipelineBoard">
+              <article><strong>1</strong><span>Grounding</span><p id="pipeEntities">-</p></article>
+              <article><strong>2</strong><span>Subgrafo</span><p id="pipeGraph">-</p></article>
+              <article><strong>3</strong><span>Reranking</span><p id="pipeVectors">-</p></article>
+              <article><strong>4</strong><span>Prompt</span><p id="pipeAnswer">-</p></article>
+            </div>
+            <div class="trace-grid">
+              <article class="trace-panel">
+                <div class="trace-panel-head">
+                  <h3>Entity Grounding</h3>
+                  <span id="traceGroundingMeta">aguardando execucao</span>
+                </div>
+                <div id="traceEntities" class="trace-chip-list"></div>
+              </article>
+              <article class="trace-panel">
+                <div class="trace-panel-head">
+                  <h3>Graph Retrieval</h3>
+                  <span id="traceGraphMeta">k-hop deterministico</span>
+                </div>
+                <div id="traceGraphEvidence" class="trace-evidence-list"></div>
+              </article>
+            </div>
+            <section class="trace-panel">
+              <div class="trace-panel-head">
+                <h3>Vector Retrieval + Graph Boost</h3>
+                <span id="traceRetrievalMeta">cosine + boost estrutural</span>
+              </div>
+              <div id="traceDocuments" class="trace-doc-list"></div>
+            </section>
+            <details class="trace-panel trace-prompt-panel">
+              <summary>
+                <span>Prompt Assembly</span>
+                <small id="tracePromptMeta">contexto estrutural + textual</small>
+              </summary>
+              <div id="tracePromptSections" class="trace-prompt-sections"></div>
+              <pre id="tracePromptPreview"></pre>
+            </details>
           </section>
 
           <section class="view" id="view-compare">
@@ -322,8 +380,8 @@
           <section class="view" id="view-lecture">
             <div class="view-head">
               <div>
-                <h2>Exploracao Guiada</h2>
-                <p>Sequencia operacional para percorrer corpus, RAG, grafo, GraphRAG e comparacao.</p>
+                <h2>Flow GraphRAG</h2>
+                <p>Sequencia interativa para contrastar RAG textual, grafo estrutural e GraphRAG.</p>
               </div>
               <div class="button-row">
                 <button class="secondary-button lecture-nav-button" type="button" data-lecture-nav="prev">Voltar</button>
@@ -339,19 +397,36 @@
                   <span id="lectureProgress">Etapa -</span>
                   <div><span id="lectureProgressBar"></span></div>
                 </div>
+                <section class="lecture-question-card">
+                  <div>
+                    <strong>Prompt de teste</strong>
+                    <p id="lectureQuestion">-</p>
+                  </div>
+                  <div id="lectureModePill" class="lecture-mode-pill">-</div>
+                </section>
+                <div id="lectureContrasts" class="method-contrast-grid"></div>
                 <ul id="lecturePoints"></ul>
-                <div class="lecture-demo">
-                  <strong>Interacao</strong>
-                  <p id="lectureDemoAction">-</p>
+                <div class="lecture-info-grid">
+                  <section class="lecture-demo">
+                    <strong>Interacao</strong>
+                    <p id="lectureDemoAction">-</p>
+                  </section>
+                  <section class="lecture-architecture" id="lectureArchitecturePanel">
+                    <strong id="lectureArchitectureName">Arquitetura</strong>
+                    <div id="lectureArchitectureFlow" class="architecture-flow"></div>
+                    <p id="lectureArchitectureTakeaway">-</p>
+                    <small id="lectureArchitectureRisk">-</small>
+                  </section>
                 </div>
                 <details class="lecture-notes" open>
-                  <summary>Insights</summary>
+                  <summary>Leitura</summary>
                   <ul id="lectureSpeakerNotes"></ul>
                 </details>
                 <div class="quiz-box">
                   <strong>Quiz</strong>
                   <p id="quizQuestion">-</p>
-                  <button class="secondary-button" id="revealQuizButton" type="button">Revelar resposta</button>
+                  <div id="quizOptions" class="quiz-options"></div>
+                  <button class="secondary-button" id="revealQuizButton" type="button">Ver explicacao</button>
                   <p id="quizAnswer" class="quiz-answer"></p>
                 </div>
                 <button class="primary-button wide-button" id="applyLectureButton" type="button">Aplicar no workspace</button>
@@ -369,10 +444,15 @@
             <div class="graph-tools">
               <button class="icon-button" id="zoomOutButton" title="Zoom out" type="button">-</button>
               <button class="icon-button" id="zoomResetButton" title="Resetar zoom" type="button">1:1</button>
+              <button class="icon-button" id="zoomFitButton" title="Ajustar grafo" type="button">Fit</button>
               <button class="icon-button" id="zoomInButton" title="Zoom in" type="button">+</button>
             </div>
           </div>
           <svg id="graphSvg" role="img" aria-label="Visualizacao do grafo"></svg>
+          <div class="graph-inspector">
+            <div class="graph-legend" id="graphLegend"></div>
+            <div class="graph-detail" id="graphDetail">Clique em um no ou aresta para ver detalhes.</div>
+          </div>
         </section>
 
         <section class="answer-panel">
@@ -391,6 +471,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260525-pure-rag"></script>
+    <script src="/static/app.js?v=20260525-graph-workbench"></script>
   </body>
 </html>
