@@ -1,152 +1,314 @@
 # GraphRAG em Middle-earth
 
-Demo pratica para uma aula/seminario de GNN, Knowledge Graphs e LLMs. A ideia e mostrar, em uma unica aplicacao local com Docker, como RAG vetorial por embeddings, Graph retrieval e GraphRAG hibrido se comportam em perguntas sobre Senhor dos Aneis, conectando chunks narrativos, subgrafos k-hop e intuicoes de GNN/message passing.
+Aplicacao local para demonstrar **RAG vetorial**, **Graph retrieval** e
+**GraphRAG hibrido** usando dados de Senhor dos Aneis. O projeto foi feito para
+uma aula/seminario de GNN, Knowledge Graphs e LLMs, mas qualquer pessoa pode
+clonar o repositorio e rodar em sua propria maquina com Docker + Ollama.
 
-## Objetivo da Aula
+A demo sobe:
 
-O seminario parte de uma pergunta simples:
+- um Neo4j com grafo de personagens, entidades, livros, scripts e chunks;
+- uma API FastAPI;
+- uma UI web com abas Overview, RAG, Graph, GraphRAG, Compare e Flow;
+- um indice vetorial local em `data/vector_store/`, gerado com embeddings do
+  Ollama;
+- consultas CLI via `make ask` e `make compare`.
 
-> O que muda quando o contexto entregue ao LLM deixa de ser apenas texto solto e passa a ser um subgrafo estruturado?
-
-A demo usa quatro fontes complementares:
-
-- **Raphtory LOTR interaction graph**: grafo de coocorrencia de personagens em sentencas da trilogia. Ele e melhor para visualizacao, centralidade, comunidades, k-hop neighborhood e conexao com GNN.
-- **LOTRO OWL ontology**: ontologia RDF/OWL com classes, personagens, lugares, armas, linguas e relacoes semanticas como `friendOf`, `enemyOf`, `hasWeapon`, `inhabitant` e `speaks`.
-- **SNA_LOTR**: livros limpos, scripts dos filmes, personagens, redes ponderadas, links por capitulo, sentimento e arquivos de link prediction.
-- **Corpus textual local**: chunks dos livros e falas dos filmes ligados a entidades por `MENTIONS`.
-
-No dashboard, **Fontes** sao os arquivos/obras de origem: 3 livros e 3 filmes. **Unidades RAG** sao as passagens indexadas e recuperaveis por embedding: `TextChunk` dos livros + `DialogueLine` dos scripts. Portanto, neste projeto `RetrievalDocument` e uma superclasse tecnica para "coisa recuperavel pelo RAG", nao um documento fonte/arquivo.
-
-O resultado e um grafo hibrido e textual:
-
-- `INTERACTS_WITH`: backbone narrativo vindo do dataset da Raphtory.
-- `CO_OCCURS_WITH`: rede ponderada do SNA_LOTR.
-- `PREDICTED_LINK`: links candidatos vindos de metricas de link prediction.
-- `TextChunk` e `DialogueLine`: evidencias textuais para RAG.
-- `MENTIONS`, `SPEAKS_LINE`, `IN_BOOK`, `IN_MOVIE`, `IN_CHAPTER`: ligam texto, personagens e fontes.
-- relacoes semanticas: camada de conhecimento vinda da ontologia LOTRO.
-- atributos/metricas: raca, genero, sentimento, word count, grau ponderado, PageRank e comunidade.
-
-## Stack
-
-- Docker Compose
-- Neo4j Community
-- FastAPI
-- JavaScript/SVG nativo para visualizacao
-- Ollama local no host para gerar respostas e embeddings
-- Vector store local persistido em `data/vector_store/` com embeddings normalizados (`.npz` + metadata JSON)
-- Python para ingestao, metricas e retrieval
-
-Modelos Ollama detectados nesta maquina:
-
-- `qwen3.6:latest` usado como default, com `context length 262144` reportado por `ollama show`
-- `gemma4:26b` como alternativa
-- `lfm2:latest` como alternativa
-- `nomic-embed-text:latest` como default para embeddings do RAG vetorial
-
-A UI consulta `/api/tags` do Ollama local no host e preenche o seletor **Modelo LLM** automaticamente. A chave **Sintese com LLM** decide se `/api/ask` e `/api/compare` ficam em retrieval-only ou usam Ollama para sintetizar as evidencias.
-
-## Como Rodar
-
-```bash
-make help
-make up
-make data
-make seed
-make ollama-pull-embed
-make vectors
-make compare Q="Qual a relação de Frodo com Sauron?"
-make ollama-warm
-make app
-```
-
-URLs:
+URLs locais:
 
 - App: http://localhost:8000
 - Neo4j Browser: http://localhost:7474
-- Bolt: `bolt://localhost:7687`
+- Neo4j Bolt: `bolt://localhost:7687`
 
-Credenciais Neo4j default:
+Credenciais Neo4j:
 
 - usuario: `neo4j`
 - senha: `graphrag-lotr`
 
-## Comandos Principais
+## Pre-requisitos
+
+Instale antes de rodar:
+
+1. **Git**
+   - Para clonar o repositorio.
+
+2. **Docker**
+   - Docker Desktop no macOS/Windows, ou Docker Engine + Docker Compose v2 no
+     Linux.
+   - Verifique:
 
 ```bash
-make help         # lista comandos de apresentacao
-make up           # sobe Neo4j e app
-make data         # baixa datasets para data/raw
-make seed         # importa e enriquece o grafo no Neo4j
-make vectors      # gera embeddings e indice vetorial local
-make stats        # mostra estatisticas do grafo
-make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid
-make ask Q="Como Frodo se conecta a Sauron?" MODE=hybrid STRATEGY=path
-make ask Q="Como Frodo se conecta a Sauron?" MODE=rag
-make ask Q="Como Frodo se conecta a Sauron?" MODE=graph
-make compare Q="Qual a relação de Frodo com Sauron?"
-make smoke-vectors
+docker --version
+docker compose version
+```
+
+3. **Ollama rodando no host**
+   - O app nao sobe um container de Ollama por padrao.
+   - O container acessa o Ollama da sua maquina por
+     `http://host.docker.internal:11434`.
+   - Verifique:
+
+```bash
+ollama list
+```
+
+4. **Modelo de embedding**
+   - Default: `nomic-embed-text:latest`.
+   - O comando `make bootstrap` tenta baixar esse modelo automaticamente.
+   - Para baixar manualmente:
+
+```bash
+ollama pull nomic-embed-text:latest
+```
+
+5. **Modelo LLM opcional**
+   - Default do projeto: `qwen3.6:latest`.
+   - Se voce nao tiver esse modelo, use outro modelo local no app ou nos comandos:
+
+```bash
+make ask Q="How is Frodo connected to Sauron?" MODEL=llama3.1:8b
+```
+
+O projeto funciona em modo **retrieval-only** mesmo sem sintese por LLM. O
+Ollama e essencial para gerar embeddings vetoriais com `make vectors`.
+
+## Setup Rapido
+
+Depois de clonar:
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd phd-graphrag
+make bootstrap
+make app
+```
+
+Abra:
+
+```text
+http://localhost:8000
+```
+
+O `make bootstrap` faz, em ordem:
+
+1. baixa o modelo de embedding definido por `EMBED_MODEL`;
+2. sobe Neo4j + app com Docker Compose;
+3. garante os dados brutos em `data/raw/`;
+4. importa o grafo no Neo4j;
+5. gera o indice vetorial local em `data/vector_store/`;
+6. imprime estatisticas do grafo.
+
+Os dados brutos principais ja estao versionados em `data/raw/`, entao `make data`
+normalmente apenas valida que os arquivos existem. Se algum arquivo estiver
+faltando, ele tenta baixar novamente das fontes originais.
+
+## Setup Passo a Passo
+
+Use este fluxo se quiser acompanhar cada etapa.
+
+1. Suba os containers:
+
+```bash
+make up
+```
+
+2. Garanta os datasets:
+
+```bash
+make data
+```
+
+3. Importe o grafo no Neo4j:
+
+```bash
+make seed
+```
+
+4. Baixe o modelo de embedding, se ainda nao tiver:
+
+```bash
 make ollama-pull-embed
-make ollama-show  # mostra metadados do modelo local
-make ollama-warm  # preaquece o modelo local antes da apresentacao
-make logs         # acompanha logs
-make reset        # remove containers e volume do Neo4j
 ```
 
-## Perguntas Boas para a Demo
+5. Gere o indice vetorial:
 
 ```bash
-make ask Q="Como Frodo se conecta a Sauron?"
-make compare Q="Qual a relação de Frodo com Sauron?"
-make ask Q="Quais personagens sao mais centrais na rede?"
-make ask Q="Que relacoes aproximam Frodo, Gandalf e Aragorn?"
-make ask Q="O que muda quando aumento a vizinhanca para 3 saltos?"
-make ask Q="Quais personagens conectam hobbits, elfos e homens?"
+make vectors
 ```
 
-## Roteiro de 40 Minutos
+6. Confira estatisticas:
 
-1. **Motivacao: RAG vs GraphRAG (5 min)**
-   - RAG tradicional recupera chunks.
-   - GraphRAG recupera entidades, relacoes, caminhos e comunidades.
-   - A diferenca pratica e que o contexto passa a ter estrutura.
+```bash
+make stats
+```
 
-2. **Modelo de Grafo + Texto (6 min)**
-   - Mostrar `Character`, `Weapon`, `Place`, `Language`, `Race`, `TextChunk`, `DialogueLine`.
-   - Mostrar `INTERACTS_WITH` e `CO_OCCURS_WITH` como backbone.
-   - Mostrar relacoes semanticas da ontologia.
-   - Mostrar `MENTIONS` como ponte entre texto e grafo.
+7. Abra a aplicacao:
 
-3. **Visualizacao no Neo4j (7 min)**
-   - Abrir Neo4j Browser.
-   - Rodar consultas Cypher simples.
-   - Mostrar vizinhanca de Frodo, Gandalf, Sauron.
+```bash
+make app
+```
 
-4. **Comparacao RAG vs Graph vs GraphRAG (12 min)**
-   - Rodar `make compare Q="Qual a relação de Frodo com Sauron?"`.
-   - Mostrar RAG vetorial: bom para narrativa, sem estrutura explicita.
-   - Mostrar Graph: bom para caminho/vizinhanca, mas pobre em explicacao.
-   - Mostrar GraphRAG: entidades + subgrafo + chunks ligados ao subgrafo.
-   - Na aba GraphRAG, alternar estrategias: `KG-as-Index`, `Vector-first`, `Graph filter`, `Paths`, `Community` e `Symbolic Cypher`.
-   - Alterar `hops=1`, `hops=2`, `hops=3`.
-   - Ligar a chave `Sintese com LLM` apenas quando o modelo ja estiver preaquecido.
+## Makefile
 
-5. **Conexao com GNN (8 min)**
-   - `k-hop neighborhood` como campo receptivo.
-   - Agregacao de vizinhos como analogia a message passing.
-   - PageRank/comunidades como features estruturais.
-   - Por que GraphRAG e GNN atacam problemas parecidos por mecanismos diferentes.
+Rode:
 
-6. **Limitacoes e Extensoes (2 min)**
-   - Coocorrencia nao e causalidade.
-   - Ontologia e pequena, mas semanticamente rica.
-   - Proximo passo: GDS, node classification, link prediction e ranking de subgrafos.
+```bash
+make help
+```
 
-## Consultas Cypher para Mostrar
+Principais comandos:
 
-Regra pratica para abrir no Neo4j Browser: retorne objetos completos (`p`, `n`, `r`), nao apenas propriedades escalares. `RETURN c.name` vira tabela; `RETURN c` ou `RETURN p` vira grafo.
+```bash
+make bootstrap       # setup completo: Docker, dados, Neo4j e vetores
+make up              # sobe Neo4j e app
+make down            # para os containers sem apagar volume do Neo4j
+make reset           # remove containers e volumes do Neo4j
+make data            # garante datasets em data/raw
+make seed            # importa o grafo no Neo4j
+make vectors         # gera embeddings e indice vetorial local
+make stats           # imprime estatisticas do grafo
+make app             # mostra URL da aplicacao
+make neo4j           # mostra URL e credenciais do Neo4j Browser
+make logs            # acompanha logs
+make ps              # lista containers
+```
 
-Vizinhanca de Frodo:
+Comandos com Ollama:
+
+```bash
+make ollama-list        # lista modelos instalados no host
+make ollama-pull        # baixa o modelo LLM definido por MODEL
+make ollama-pull-embed  # baixa o modelo de embedding definido por EMBED_MODEL
+make ollama-show        # mostra metadados do modelo definido por MODEL
+make ollama-warm        # preaquece o modelo LLM antes da apresentacao
+```
+
+Comandos de pergunta:
+
+```bash
+make ask Q="How is Frodo connected to Sauron?" MODE=hybrid
+make ask Q="How is Frodo connected to Sauron?" MODE=rag
+make ask Q="How is Frodo connected to Sauron?" MODE=graph
+make compare Q="How are Frodo and Sauron connected through the One Ring?"
+```
+
+Parametros uteis:
+
+```bash
+Q="..."                  # pergunta
+MODE=rag|graph|hybrid    # modo de recuperacao
+STRATEGY=kg_index        # estrategia GraphRAG
+HOPS=2                   # profundidade do subgrafo
+TOP_K=8                  # numero de evidencias textuais
+MODEL=qwen3.6:latest     # modelo LLM do Ollama
+EMBED_MODEL=nomic-embed-text:latest
+NUM_CTX=16384            # janela de contexto enviada ao Ollama
+TIMEOUT=60               # timeout de geracao
+```
+
+Exemplos:
+
+```bash
+make ask Q="Why does the One Ring matter to Frodo?" MODE=rag TOP_K=8
+make ask Q="Who are the connectors between Frodo and Mordor?" MODE=graph HOPS=3
+make ask Q="How is Frodo connected to Sauron?" MODE=hybrid STRATEGY=path
+make compare Q="How are Frodo and Sauron connected through the One Ring?" TOP_K=8
+```
+
+## Usando a Interface
+
+Abra http://localhost:8000.
+
+Abas principais:
+
+- **Overview**: resumo do corpus, grafo, exemplos e status local.
+- **RAG**: busca vetorial pura em chunks dos livros e falas dos scripts.
+- **Graph**: laboratorio Cypher read-only, visualizacao de subgrafos e sintese
+  Graph-only.
+- **GraphRAG**: estrategias hibridas que combinam subgrafo, embeddings,
+  filtros, caminhos, comunidades e Cypher.
+- **Compare**: compara RAG, Graph e GraphRAG para a mesma pergunta.
+- **Flow**: roteiro guiado para apresentar a aula.
+
+Na coluna lateral:
+
+- **Pergunta**: texto usado nos modos RAG, GraphRAG e Compare.
+- **Top-k**: quantas evidencias textuais entram no resultado.
+- **Saltos / Centro**: parametros do subgrafo.
+- **Modelo LLM**: lista modelos detectados no Ollama local.
+- **Sintese com LLM**: se desligado, o app mostra apenas evidencias recuperadas;
+  se ligado, o Ollama sintetiza a resposta.
+
+## Estrategias GraphRAG
+
+A aba GraphRAG implementa seis familias:
+
+- `kg_index`: entidades da pergunta abrem um subgrafo k-hop; chunks que
+  mencionam sementes/vizinhos ganham boost.
+- `vector_first`: busca vetorial primeiro; entidades dos hits expandem o grafo
+  depois.
+- `graph_filter`: o subgrafo vira filtro duro para documentos ligados por
+  `MENTIONS`.
+- `path`: caminhos curtos e conectores 2-hop reforcam evidencias textuais.
+- `community`: usa comunidade estrutural como contexto local-to-global.
+- `cypher`: consulta simbolica por `MENTIONS`; a aba Graph mostra a geracao de
+  Cypher revisavel.
+
+Para comparar pelo terminal:
+
+```bash
+make smoke-strategies Q="How is Frodo connected to Sauron?"
+```
+
+## Dados
+
+Fontes usadas:
+
+- Raphtory LOTR interaction graph;
+- LOTRO OWL ontology;
+- SNA_LOTR, com livros limpos, scripts, redes, sentimento e predicoes.
+
+Arquivos brutos:
+
+```text
+data/raw/
+```
+
+Indice vetorial:
+
+```text
+data/vector_store/
+```
+
+O indice vetorial nao precisa ser baixado: gere localmente com `make vectors`.
+Ele usa embeddings normalizados e cosine similarity.
+
+Terminologia da UI:
+
+- **Fontes**: obras de origem, como livros e filmes.
+- **Chunks livro**: `TextChunk`, pedaços dos livros completos.
+- **Falas script**: `DialogueLine`, falas dos scripts dos filmes.
+- **Unidades RAG**: tudo que pode ser recuperado pelo RAG: `TextChunk` +
+  `DialogueLine`.
+- **RetrievalDocument**: superclasse tecnica para uma unidade recuperavel; nao
+  significa arquivo fonte.
+
+## Neo4j Browser
+
+Abra:
+
+```text
+http://localhost:7474
+```
+
+Credenciais:
+
+```text
+usuario: neo4j
+senha: graphrag-lotr
+```
+
+Consultas uteis:
 
 ```cypher
 MATCH p = (:Entity {name: "Frodo"})-[*1..2]-()
@@ -154,33 +316,12 @@ RETURN p
 LIMIT 80;
 ```
 
-Top personagens por PageRank:
-
-```cypher
-MATCH (c:Character)
-WITH c
-ORDER BY coalesce(c.pagerank, 0) DESC
-LIMIT 15
-RETURN c;
-```
-
-Caminhos entre Frodo e Sauron:
-
 ```cypher
 MATCH p = shortestPath(
   (:Entity {name: "Frodo"})-[*..4]-(:Entity {name: "Sauron"})
 )
 RETURN p;
 ```
-
-Relacoes semanticas da ontologia:
-
-```cypher
-MATCH p = (:Entity {name: "Frodo"})-[:FRIEND_OF|ENEMY_OF|HAS_WEAPON|SPEAKS]-()
-RETURN p;
-```
-
-Chunks que mencionam Frodo e Sauron:
 
 ```cypher
 MATCH (d:RetrievalDocument)-[rf:MENTIONS]->(f:Entity {name: "Frodo"})
@@ -191,89 +332,115 @@ LIMIT 10
 RETURN d, rf, f, rs, s;
 ```
 
-## Decisoes de Projeto
+Para visualizar grafo no Neo4j Browser, retorne objetos completos:
 
-- **Neo4j em vez de RDF store puro**: facilita visualizacao, Cypher e demo em sala.
-- **GraphRAG customizado em vez de framework pesado**: mais controlavel e explicavel para uma aula.
-- **Dataset hibrido e rico**: Raphtory da densidade estrutural; LOTRO OWL da semantica; SNA_LOTR da corpus textual, rede ponderada e features.
-- **Ollama local**: evita dependencia de API externa.
-- **Docker-first**: parceiro consegue rodar com os mesmos comandos.
-- **RAG vetorial local**: embeddings gerados no Ollama com `nomic-embed-text:latest` e cosine similarity em um indice persistido simples.
-- **BM25 como fallback**: se o indice vetorial ainda nao existir, a demo ainda recupera evidencias textuais sem travar.
+- bom: `RETURN p`
+- bom: `RETURN n, r, m`
+- ruim para visualizacao: `RETURN n.name`
 
-## Estrategias GraphRAG Implementadas
+`RETURN n.name` vira tabela, nao grafo.
 
-A aba **GraphRAG** nao trata GraphRAG como uma tecnica unica. Ela permite selecionar e comparar seis familias:
+## Validacao
 
-- `kg_index`: entidades da pergunta abrem subgrafo k-hop; o subgrafo da boost no ranking vetorial.
-- `vector_first`: busca vetorial pura primeiro; entidades mencionadas nos chunks recuperados expandem o grafo depois.
-- `graph_filter`: subgrafo vira filtro duro dentro da busca vetorial; so entram documentos ligados por `MENTIONS`.
-- `path`: exige pelo menos duas entidades; caminhos curtos e conectores 2-hop recebem peso extra no reranking.
-- `community`: comunidade estrutural dos personagens aproxima a ideia local-to-global e marca fallback quando nao ha comunidade.
-- `cypher`: template Cypher simbolico e read-only busca documentos por `MENTIONS`; a geracao livre de Cypher fica na aba Graph.
-
-Para auditar se as variantes nao colapsaram no mesmo codigo:
+Depois do setup:
 
 ```bash
-make smoke-strategies
+make smoke
 ```
 
-Referencias usadas na UI: Microsoft GraphRAG Local/Global Search, From Local to Global GraphRAG, GRAG, KG2RAG, LightRAG, HippoRAG e GNN-RAG.
+Para validar apenas o indice vetorial em uma amostra pequena:
 
-## Perguntas Centrais para Fechar com o Professor/Turma
+```bash
+make smoke-vectors
+```
 
-- Quando uma vizinhanca k-hop e suficiente, e quando precisamos de busca global/comunidades?
-- Em que tipo de pergunta o grafo ajuda mais que um RAG vetorial?
-- Quando o texto sozinho explica melhor que o grafo?
-- Qual e o limite de usar coocorrencia como relacao?
-- Como features semanticas de KG poderiam alimentar uma GNN?
-- Como uma GNN poderia ranquear melhores subgrafos para GraphRAG?
+Para validar contratos de prompt/LLM:
+
+```bash
+make llm-check
+```
 
 ## Troubleshooting
 
-O Ollama roda no host, nao em container. Se o app subir mas o LLM nao responder, verifique se o Ollama esta rodando localmente:
+### O app abriu, mas o LLM nao responde
+
+Verifique se o Ollama esta rodando no host:
 
 ```bash
 ollama list
 ```
 
-O container usa por padrao:
+Se o modelo default nao existir, escolha outro:
+
+```bash
+make ask Q="How is Frodo connected to Sauron?" MODEL=llama3.1:8b
+```
+
+Na UI, escolha um modelo no seletor **Modelo LLM**.
+
+### O embedding falhou
+
+Baixe o modelo de embedding:
+
+```bash
+make ollama-pull-embed EMBED_MODEL=nomic-embed-text:latest
+```
+
+Depois gere os vetores:
+
+```bash
+make vectors
+```
+
+### Quero recomecar do zero
+
+Isto apaga o volume do Neo4j:
+
+```bash
+make reset
+make bootstrap
+```
+
+### Porta ocupada
+
+As portas default sao:
+
+- app: `8000`
+- Neo4j Browser: `7474`
+- Neo4j Bolt: `7687`
+
+Se alguma porta estiver ocupada, altere `docker-compose.yml` ou pare o processo
+que esta usando a porta.
+
+### Estou no Linux e o container nao acessa o Ollama
+
+O compose ja inclui:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+Se ainda assim falhar, confirme que o Ollama esta aceitando conexoes no host e
+que `OLLAMA_BASE_URL` no container aponta para:
 
 ```text
 http://host.docker.internal:11434
 ```
 
-Antes da aula, preaqueca o modelo:
+### Quero trocar modelo ou contexto
 
 ```bash
-make ollama-warm
+make ask Q="How is Frodo connected to Sauron?" MODEL=llama3.1:8b NUM_CTX=32768 TIMEOUT=180
 ```
 
-Se estiver rodando tudo fora do Docker, use:
+## Observacoes de Metodo
 
-```bash
-export OLLAMA_BASE_URL=http://localhost:11434
-```
-
-Se quiser trocar o modelo:
-
-```bash
-make ask Q="Como Frodo se conecta a Sauron?" MODEL=gemma4:26b
-```
-
-Na UI, use o seletor **Modelo LLM**. Ele lista os modelos disponiveis no Ollama local da maquina.
-
-Para o RAG vetorial, baixe o modelo de embedding e gere o indice:
-
-```bash
-make ollama-pull-embed EMBED_MODEL=nomic-embed-text:latest
-make vectors EMBED_MODEL=nomic-embed-text:latest
-```
-
-O endpoint `/api/vector/status` mostra se o indice esta pronto. O endpoint `/api/vector-search` expõe a busca vetorial usada no playground.
-
-Se quiser explorar a janela longa do `qwen3.6:latest`, aumente `NUM_CTX`. Para a demo, o default e propositalmente menor para reduzir latencia:
-
-```bash
-make ask Q="Como Frodo se conecta a Sauron?" NUM_CTX=262144 TIMEOUT=180
-```
+- Coocorrencia nao e causalidade.
+- O modo Graph-only nao usa chunks textuais.
+- O modo RAG puro nao usa subgrafo nem boost estrutural.
+- O modo GraphRAG combina evidencia textual e estrutural.
+- Scores de RAG puro (`cosine`) nao sao diretamente comparaveis com scores de
+  GraphRAG (`cosine + graph boost`).
+- As perguntas de demo ficam em ingles porque o corpus textual e os nomes do
+  grafo estao majoritariamente em ingles.
