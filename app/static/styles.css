@@ -223,6 +223,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .field span,
@@ -245,9 +246,15 @@ select {
   background: #fffdf7;
   border: 1px solid var(--border);
   color: var(--ink);
+  max-width: 100%;
   min-width: 0;
   outline: none;
   padding: 10px 11px;
+  width: 100%;
+}
+
+.compact {
+  min-width: 0;
 }
 
 textarea {
